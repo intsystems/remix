@@ -1,0 +1,196 @@
+\documentclass[aspectratio=169]{beamer}
+
+\usepackage[T1,T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[main=russian,english]{babel}
+\usepackage{cmap}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+\usepackage{array}
+\usepackage{multicol}
+\usepackage{booktabs}
+\usepackage{csquotes}
+\usepackage{amssymb,amsfonts,amsmath}
+\usepackage{listings}
+
+\usecolortheme{beaver}
+\usefonttheme[onlymath]{serif}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[page number]
+\setbeamertemplate{blocks}[rounded=true,shadow=true]
+\setbeamersize{text margin left=0.5cm,text margin right=0.5cm}
+\setbeamerfont{author}{size=\normalsize}
+\setbeamerfont{institute}{size=\normalsize}
+\setbeamerfont{date}{size=\normalsize}
+\setbeamertemplate{enumerate item}{\insertenumlabel)}
+\setbeamertemplate{enumerate subitem}{\insertenumlabel)}
+\setbeamertemplate{enumerate subsubitem}{\insertenumlabel)}
+
+\newcommand{\E}{\mathbb E}
+\newcommand{\sg}{\operatorname{stopgrad}}
+\newcommand{\src}[2]{\par\medskip{\scriptsize\color{gray}Источник: \href{#1}{#2}\par}}
+\lstset{language=Python,basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{darkred},commentstyle=\color{gray},
+  showstringspaces=false,columns=fullflexible,keepspaces=true,
+  breaklines=true,frame=none}
+
+\title{Low-variance gradient estimation for mixture distributions}
+\subtitle{ReMix: reparameterization for mixtures}
+\author{Команда проекта: Александр Уденеев, Алексей Пономарев,\\Лина Горбунова, Максим Иванов}
+\institute{ИАД, МФТИ}
+\date{\empty}
+
+\begin{document}
+
+\begin{frame}
+  \thispagestyle{empty}
+  \maketitle
+\end{frame}
+
+
+\begin{frame}{Мотивация проекта}
+  Для нормального распределения работает репараметризация:
+  \[
+    z=\mu+\sigma\odot\varepsilon,\qquad \varepsilon\sim\mathcal N(0,I).
+  \]
+  \begin{block}{Проблема}
+    В смеси сначала выбирается дискретная компонента
+    $c\sim\operatorname{Cat}(\pi)$, затем $z\sim q_c$.
+    Обычный backprop через этот выбор не даёт градиент по параметрам смеси
+  \end{block}
+  \begin{block}{Цель}
+    Реализовать и сравнить четыре несмещённых алгоритма для оценки градиента.
+  \end{block}
+  В PyTorch у \texttt{MixtureSameFamily} не поддерживается \texttt{rsample} для градиентов по параметрам.
+\end{frame}
+
+\begin{frame}{Постановка задачи}
+  \[
+    q_\theta(z)=\sum_{k=1}^{K}\pi_kq_{k,\theta}(z),\quad
+    \pi=\operatorname{softmax}(a),\quad
+    q_{k,\theta}=\mathcal N(\mu_k,\operatorname{diag}\sigma_k^2).
+  \]
+  Максимизируем нижнюю оценку логарифма правдоподобия:
+  \[
+    \mathcal L(\theta)=\E_{z\sim q_\theta}[f_\theta(z)],
+    \qquad f_\theta(z)=\log p(x,z)-\log q_\theta(z).
+  \]
+
+  Обучаем $\theta=(a,\mu,\rho)$, где $\sigma=\operatorname{softplus}(\rho)+\varepsilon$.
+\end{frame}
+
+\begin{frame}{Классы и интеграция}
+  \centering
+  \begin{tikzpicture}[
+    box/.style={draw=darkred,rounded corners,align=center,
+      text width=3.7cm,minimum height=0.95cm,font=\small},
+    link/.style={-{Latex[length=2mm]},thick,draw=darkred}]
+    \node[box] (model) {Задача пользователя\\$\log p(x,z)$ и параметры $q$};
+    \node[box,right=0.7cm of model] (elbo) {\texttt{ELBOObjective}\\\texttt{value, surrogate\_loss}};
+    \node[box,right=0.7cm of elbo] (opt) {\texttt{loss.backward()}\\\texttt{torch.optim.Adam}};
+    \node[box,below=0.55cm of model] (dist) {\texttt{GaussianMixture}\\\texttt{sample(), log\_prob()}};
+    \node[box,below=0.55cm of elbo] (est) {\texttt{GradientEstimator}\\\texttt{estimate(q, objective)}};
+    \draw[link] (model) -- (elbo);
+    \draw[link] (elbo) -- (opt);
+    \draw[link] (model) -- (dist);
+    \draw[link] (dist) -- (est);
+    \draw[link] (est) -- (elbo);
+  \end{tikzpicture}
+  \par\medskip
+  \raggedright
+  \small
+  \textbf{Реализации интерфейса} (расскажу ниже): \texttt{ScoreFunction}, \texttt{Stratified},
+  \texttt{Implicit}, \texttt{PostStratified}.
+  \par\medskip
+  \textbf{Стек:} Python, PyTorch / \texttt{torch.distributions}, Pyro, autograd, pytest, \texttt{torch.utils.benchmark}, Matplotlib.
+\end{frame}
+
+\begin{frame}{1. Score-function и модификация STL}
+  \textbf{Идея score-function:} оценить, как параметры меняют плотность
+  в случайной точке $z\sim q_\theta$.
+  \[
+    \widehat g_{\rm SF}
+    =\bigl(f_\theta(z)-b\bigr)\nabla_\theta\log q_\theta(z)
+      +\partial_\theta f_\theta(z).
+  \]
+  $b$ не зависит от текущего $z$ и уменьшает шум.
+  \begin{block}{STL для репараметризованных алгоритмов оценки}
+    В $f$ заменяем $\log q_\theta(z)$ на $\log q_{\sg(\theta)}(z)$.
+    Сохраняем градиент через $z$, убираем прямую производную по $\theta$.
+  \end{block}
+  \src{https://arxiv.org/abs/1703.09194}{Roeder et al., 2017, §2--3}
+\end{frame}
+
+\begin{frame}{2. Stratified: сэмпл из каждой компоненты}
+  \begin{enumerate}
+    \item Для каждого $k$ берём $\varepsilon_k\sim\mathcal N(0,I)$.
+    \item Строим $z_k=T_{k,\theta}(\varepsilon_k)
+      =\mu_k+\sigma_k\odot\varepsilon_k$.
+    \item Дифференцируем взвешенную сумму:
+  \end{enumerate}
+  \[
+    \widehat g_{\rm strat}
+    =\nabla_\theta\sum_{k=1}^{K}\pi_k f_\theta(z_k).
+  \]
+  
+    Каждая компонента участвует в каждом шаге.
+    Случайный выбор её номера заменяется суммированием. Получается несмещённая оценка.
+  \src{https://www.jmlr.org/papers/v27/25-2560.html}{Burroni, Sheldon, 2026, §3}
+\end{frame}
+
+\begin{frame}{3. Implicit: производная через фиксированный квантиль}
+  \begin{enumerate}
+    \item Сэмплируем $z\sim q_\theta$ обычным способом.
+    \item Фиксируем его квантиль $u=F_\theta(z)$.
+    \item Неявно дифференцируем равенство $F_\theta(z)=u$:
+  \end{enumerate}
+  \[
+    F_\theta(z)=\sum_k\pi_k F_{k,\theta}(z),\qquad
+    \frac{\partial z}{\partial\theta}
+    =-\frac{\partial_\theta F_\theta(z)}{q_\theta(z)}.
+  \]
+
+    При изменении смеси точка движется так, чтобы её квантиль сохранялся.
+    Получаем градиент и по компонентам, и по весам.
+
+  \src{https://arxiv.org/abs/1805.08498}{Figurnov et al., 2018, §3--4}
+\end{frame}
+
+
+\begin{frame}{4. Post-stratified: один сэмпл для всех компонент}
+  Взять $z\sim q_\theta$ и вычислить вероятности его происхождения:
+  \[
+    r_k(z)=\frac{\pi_kq_{k,\theta}(z)}{q_\theta(z)},\qquad
+    v_k(z)=\left.\frac{\partial T_{k,\theta}(\varepsilon)}{\partial\theta}
+      \right|_{\varepsilon=T_{k,\theta}^{-1}(z)\;\text{фиксирован}}.
+  \]
+  \[
+    \widehat g_{\rm PS}=\partial_\theta f_\theta(z)
+    +\sum_k r_k(z)\left[
+      v_k(z)^\top\nabla_z f_\theta(z)
+      +f_\theta(z)\nabla_\theta\log\pi_k\right].
+  \]
+    
+  \src{https://www.jmlr.org/papers/v27/25-2560.html}{Burroni, Sheldon, 2026, §4.3}
+\end{frame}
+
+\begin{frame}[fragile]{Ожидаемый пример использования}
+  \begin{lstlisting}
+import torch
+from remix import DiagonalGaussianMixture, ELBOObjective
+from remix.estimators import PostStratified
+
+q = DiagonalGaussianMixture(n_components=4, event_dim=2)
+objective = ELBOObjective(log_joint=target_log_prob, stl=True)
+estimator = PostStratified(n_samples=32)
+optimizer = torch.optim.Adam(q.parameters(), lr=1e-2)
+
+for step in range(1000):
+    optimizer.zero_grad()
+    result = estimator.estimate(q.distribution(), objective)
+    result.surrogate_loss.backward()
+    optimizer.step()
+  \end{lstlisting}
+\end{frame}
+
+\end{document}
