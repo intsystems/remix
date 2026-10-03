@@ -1,0 +1,15 @@
+\title{Paper Title}
+\author{}
+
+\ifdgruyterstyle
+  \articletype{Research Article}
+  \runningtitle{Paper Title}
+  \abstract{\input{abstract}}
+  \maketitle
+\else
+  \date{}
+  \maketitle
+  \begin{abstract}
+    \input{abstract}
+  \end{abstract}
+\fi
