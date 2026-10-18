@@ -240,6 +240,18 @@ for step in range(300):
   \]
 \end{frame}
 
+\begin{frame}[fragile]{Результат бенчмарка}
+  \begin{lstlisting}
+Normal mixture: estimated KL 0.2001 -> 0.0000
+Learned weights: [0.19305355846881866, 0.8069464564323425]
+
+Laplace mixture: estimated KL 0.1624 -> 0.0003
+Learned weights: [0.1880115270614624, 0.8119884729385376]
+
+Normal + Laplace mixture: estimated KL 0.1755 -> 0.0001
+Learned weights: [0.191883847117424, 0.8081161975860596]
+  \end{lstlisting}
+\end{frame}
 
 \begin{frame}{Вывод}
   \begin{block}{Результат текущего этапа}
