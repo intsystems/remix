@@ -1,6 +1,8 @@
 import torch
 from torch.distributions import Laplace, Normal
 
+from tqdm.auto import trange
+
 from remix import ELBOObjective, Mixture
 from remix.estimators import ScoreFunction
 
@@ -19,7 +21,7 @@ def fit(name, components):
             return (q.log_prob(z) - target.log_prob(z)).mean().item()
 
     initial = measure_kl()
-    for _ in range(300):
+    for _ in trange(300):
         optimizer.zero_grad()
         result = estimator.estimate(Mixture(parameter, components), objective)
         result.surrogate_loss.backward()

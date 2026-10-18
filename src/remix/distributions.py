@@ -25,7 +25,7 @@ class Mixture:
         self.mixing = Categorical(logits=logits)
 
     def sample(self, sample_shape: tuple) -> Tensor:
-        sample_shape = torch.tensor(sample_shape)
+        sample_shape = torch.Size(sample_shape)
         count = sample_shape.numel()
 
         with torch.no_grad():
