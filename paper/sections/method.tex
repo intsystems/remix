@@ -3,6 +3,19 @@
 The following estimators target $\nabla_\theta\mathcal J$ under the assumptions
 above, with optional STL for the ELBO.
 
+Algorithms~\ref{alg:score}--\ref{alg:poststratified} return an objective estimate
+and a scalar surrogate $\mathcal S$; differentiating $\mathcal S$ gives the
+estimated ascent gradient. A loss-minimizing optimizer uses $-\mathcal S$.
+Write $\varphi_\theta(z)=f_\theta(z)$ for ordinary
+differentiation. With STL, use
+$\varphi_\theta(z)=\log p(x,z)-\log q_{\operatorname{sg}(\theta)}(z)$, retaining
+the derivative through $z$. For diagonal Gaussian components,
+$\rho=\mathcal N(0,I)$ and
+$T_{k,\theta}(\varepsilon)=\mu_k+\sigma_k\odot\varepsilon$.
+The single-sample algorithms first select a component with probabilities $\pi$,
+then draw its continuous value. Independent repetitions can be averaged to
+increase the sample budget.
+
 \subsection{Score-function estimator}
 The score-function method differentiates the mixture density at a fixed sample.
 For $Z\sim q_\theta$ and a baseline $b$ independent of $Z$, it gives
@@ -16,15 +29,25 @@ The identity follows by differentiating under the integral. The baseline can be
 chosen to reduce variance because its contribution has zero expectation.
 The method requires a differentiable mixture log density.
 
-For ELBO optimization with STL, the estimator consists of the first term in
-\eqref{eq:score}. At a detached sample $z_0=\operatorname{sg}(Z)$,
-automatic differentiation of
-$\operatorname{sg}(f_\theta(z_0)-b)\log q_\theta(z_0)$ produces this gradient.
-A learned baseline is detached in the same expression. With softmax logits
+Algorithm~\ref{alg:score} draws one component and its base noise, then detaches
+the resulting value. Differentiating the log density supplies the score term,
+while differentiating $\varphi_\theta(z_0)$ supplies the direct objective term.
+The baseline is detached in the score coefficient. With softmax logits
 $\alpha$ and component parameters independent of $\alpha$, the weight gradient
-is $(f_\theta(Z)-b)(r_j(Z)-\pi_j)$ for logit $\alpha_j$.
-For a general objective, differentiating $f_\theta(z_0)$ supplies the direct
-term $d_\theta(z_0)$.
+is $(f_\theta(Z)-b)(r_j(Z)-\pi_j)$ for logit $\alpha_j$ with STL.
+
+\begin{algorithm}[H]
+ \small
+ \caption{Score-function sampling and surrogate}
+ \label{alg:score}
+ \KwIn{Mixture $q_\theta$, component maps $T_{k,\theta}$, objective
+        $\varphi_\theta$, baseline $b$}
+ Draw $c\sim\mathrm{Cat}(\pi)$ and $\varepsilon\sim\rho$\;
+ $z_0\leftarrow\operatorname{sg}(T_{c,\theta}(\varepsilon))$\;
+ $v\leftarrow\varphi_\theta(z_0)$;\quad $\ell\leftarrow\log q_\theta(z_0)$\;
+ $\mathcal S\leftarrow\operatorname{sg}(v-b)\,\ell+v$\;
+ \KwRet{$(\operatorname{sg}(v),\mathcal S)$}\;
+\end{algorithm}
 
 \subsection{Stratified estimator}
 Stratification evaluates the objective within every component and combines the
@@ -41,9 +64,28 @@ expectations gives \citep{roeder2017stl,morningstar2021mixtures}
  \label{eq:stratified}
 \end{equation}
 In practice, automatic differentiation of the weighted sample average constructs
-all three terms. Applying STL freezes the density parameters within $f_\theta$
-while keeping the outer mixture weights and the sample transformations
-differentiable.
+all three terms. Algorithm~\ref{alg:stratified} draws independent noise within
+every component and retains the derivative through each transformation and the
+outer mixture weights. Every sampled point is evaluated using the full mixture
+density in the ELBO.
+
+\begin{algorithm}[H]
+ \small
+ \caption{Stratified sampling and surrogate}
+ \label{alg:stratified}
+ \KwIn{Weights $\pi$, component maps $T_{k,\theta}$, objective
+        $\varphi_\theta$, fixed counts $N_k\geq1$}
+ $\mathcal S\leftarrow0$\;
+ \For{$k=1,\ldots,K$}{
+  \For{$n=1,\ldots,N_k$}{
+   Draw independent $\varepsilon_{k,n}\sim\rho$\;
+   $z_{k,n}\leftarrow T_{k,\theta}(\varepsilon_{k,n})$\;
+   $\mathcal S\leftarrow\mathcal S+
+      (\pi_k/N_k)\varphi_\theta(z_{k,n})$\;
+  }
+ }
+ \KwRet{$(\operatorname{sg}(\mathcal S),\mathcal S)$}\;
+\end{algorithm}
 
 Sampling every component removes component-selection randomness and allows the
 sample budget to be allocated across components. One sample per component
@@ -79,13 +121,29 @@ univariate densities, and the component conditional CDF is its univariate CDF.
 The resulting Jacobian is lower triangular with positive conditional densities
 on the diagonal, enabling a triangular solve.
 
-To implement the first-order derivative, take a detached exact sample $z_0$,
-solve $\operatorname{sg}(A_\theta(z_0))u_\theta=-S_\theta(z_0)$, and use
-$\widetilde z=z_0+u_\theta-\operatorname{sg}(u_\theta)$ as the input to the
-objective. This preserves the value and supplies its first-order implicit gradient.
-The method requires one objective evaluation, CDF derivatives, and a Jacobian
-solve. A generic reverse-mode construction costs $O(dC_S+d^2)$, where $C_S$
-is the cost of evaluating $S_\theta$.
+Algorithm~\ref{alg:implicit} first draws an exact sample through the categorical
+index and component map. It then evaluates the standardization at that detached
+point and attaches its implicit derivative through a linear solve.
+The corrected value $\widetilde z$ equals $z_0$ and carries the first-order
+implicit gradient. The method requires one objective evaluation, CDF derivatives,
+and a Jacobian solve. A generic reverse-mode construction costs $O(dC_S+d^2)$,
+where $C_S$ is the cost of evaluating $S_\theta$.
+
+\begin{algorithm}[H]
+ \small
+ \caption{Implicit sampling and surrogate}
+ \label{alg:implicit}
+ \KwIn{Weights $\pi$, component maps $T_{k,\theta}$, standardization
+        $S_\theta$, objective $\varphi_\theta$}
+ Draw $c\sim\mathrm{Cat}(\pi)$ and $\varepsilon\sim\rho$\;
+ $z_0\leftarrow\operatorname{sg}(T_{c,\theta}(\varepsilon))$\;
+ $s\leftarrow S_\theta(z_0)$;\quad
+ $A\leftarrow\operatorname{sg}(D_zS_\theta(z)|_{z=z_0})$\;
+ Solve the triangular system $Au=-s$, retaining the derivative through $s$\;
+ $\widetilde z\leftarrow z_0+u-\operatorname{sg}(u)$\;
+ $v\leftarrow\varphi_\theta(\widetilde z)$;\quad $\mathcal S\leftarrow v$\;
+ \KwRet{$(\operatorname{sg}(v),\mathcal S)$}\;
+\end{algorithm}
 
 \subsection{Post-stratified estimator}
 Post-stratification draws one exact mixture sample and evaluates how every
@@ -106,9 +164,12 @@ Component parameters receive pathwise derivatives, and trainable weights receive
 the score contribution. With independent softmax logits, the latter is
 $f_\theta(Z)(r_j(Z)-\pi_j)$.
 
-For automatic differentiation, detach the sample $z_0$, the recovered noises
-$e_k=\operatorname{sg}(T_{k,\theta}^{-1}(z_0))$, and the responsibilities
-$\bar r_k=\operatorname{sg}(r_k(z_0))$. A surrogate with the required gradient is
+Algorithm~\ref{alg:poststratified} draws one component to obtain $z_0$, then
+recovers a base-noise value for every component at that same point. For diagonal
+Gaussians, the inverse map is
+$T_{k,\theta}^{-1}(z)=(z-\mu_k)\oslash\sigma_k$.
+The recovered noises $e_k$ and responsibilities $\bar r_k$ are detached before
+reconstructing the sample. The resulting surrogate is
 \begin{equation}
  \widetilde z=\sum_k\bar r_k T_{k,\theta}(e_k),\qquad
  \mathcal S_{\mathrm{PS}}=
@@ -118,11 +179,26 @@ $\bar r_k=\operatorname{sg}(r_k(z_0))$. A surrogate with the required gradient i
 \end{equation}
 Each reconstructed component sample equals $z_0$, so $\widetilde z$ preserves
 the original value while carrying the averaged derivative. The objective value
-can be reused in the detached weight correction. STL freezes the
-density parameters in the first term of the surrogate. For diagonal Gaussian
-components, the required maps are simply
-$T_k(\varepsilon)=\mu_k+\sigma_k\odot\varepsilon$ and
-$T_k^{-1}(z)=(z-\mu_k)\oslash\sigma_k$, with positive scales.
+is reused in the detached weight correction. The choice of $\varphi_\theta$
+applies ordinary differentiation or STL to the first term.
+
+\begin{algorithm}[H]
+ \small
+ \caption{Post-stratified sampling and surrogate}
+ \label{alg:poststratified}
+ \KwIn{Mixture $q_\theta$, component maps $T_{k,\theta}$ and their inverses,
+        objective $\varphi_\theta$}
+ Draw $c\sim\mathrm{Cat}(\pi)$ and $\varepsilon\sim\rho$\;
+ $z_0\leftarrow\operatorname{sg}(T_{c,\theta}(\varepsilon))$\;
+ \For{$k=1,\ldots,K$}{
+  $e_k\leftarrow\operatorname{sg}(T_{k,\theta}^{-1}(z_0))$;\quad
+  $\bar r_k\leftarrow\operatorname{sg}(\pi_kq_{k,\theta}(z_0)/q_\theta(z_0))$\;
+ }
+ $\widetilde z\leftarrow\sum_k\bar r_kT_{k,\theta}(e_k)$\;
+ $v\leftarrow\varphi_\theta(\widetilde z)$\;
+ $\mathcal S\leftarrow v+\operatorname{sg}(v)\sum_k\bar r_k\log\pi_k$\;
+ \KwRet{$(\operatorname{sg}(v),\mathcal S)$}\;
+\end{algorithm}
 
 This conditional averaging is a Rao--Blackwellization: it has a smaller or equal
 covariance than using only the sampled component's pathwise and weight-score
