@@ -1,12 +1,13 @@
 import io
 import re
+from pathlib import Path
 from setuptools import setup, find_packages
 
-from mylib import __version__
+ROOT = Path(__file__).resolve().parent
 
 
 def read(file_path):
-    with io.open(file_path, 'r', encoding='utf-8') as f:
+    with io.open(ROOT / file_path, 'r', encoding='utf-8') as f:
         return f.read()
 
 
@@ -19,15 +20,14 @@ requirements = '\n'.join(
 
 setup(
     # metadata
-    name='mylib',
-    version=__version__,
+    name='remix',
+    version='1.0.0',
     license='MIT',
-    author='Greg Psoi',
-    author_email="psoi.greg@gmail.com",
-    description='mylib, python package',
+    description='ReMix: gradient estimation for mixture distributions',
     long_description=readme,
-    url='https://github.com/intsystems/SoftwareTemplate-simplified',
+    url='https://github.com/intsystems/remix',
     # options
-    packages=find_packages(),
-    install_requires=requirements,
+    packages=find_packages(where=str(ROOT)),
+    package_dir={'': str(ROOT)},
+    install_requires=requirements.splitlines(),
 )

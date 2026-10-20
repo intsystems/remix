@@ -1,2 +1,17 @@
 \section{Introduction}
-% Add section content here.
+Finite mixtures provide tractable densities with sufficient flexibility to represent
+multimodality and heterogeneous posterior uncertainty
+\citep{miller2017boosting,morningstar2021mixtures}. Their use in variational inference
+requires differentiating expectations with respect to both component parameters and
+mixture weights. Exact sampling is straightforward: draw a categorical component
+index, then sample its continuous distribution. However, differentiating only the
+selected component omits the contribution from changing selection probabilities.
+
+This report specifies four unbiased gradient estimators: a score-function baseline
+with the Sticking the Landing (STL) modification, a multi-sample stratified
+estimator, implicit reparameterization, and a single-sample post-stratified
+estimator \citep{roeder2017stl,figurnov2018implicit,burroni2026mixture}.
+We give their assumptions, gradient formulas, and automatic-differentiation
+constructions in a common notation. The comparison concerns exact mixture
+expectations and distinguishes the number of objective evaluations from the cost
+of evaluating all component densities.

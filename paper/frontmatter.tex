@@ -1,11 +1,16 @@
-\title{Paper Title}
+\title{Gradient Estimation for Mixture Distributions}
 \author{}
 
 \ifdgruyterstyle
-  \articletype{Research Article}
-  \runningtitle{Paper Title}
+  % Omit the publisher-logo placeholder in this unaffiliated report draft.
+  \makeatletter
+  \global\setbox\dg@wordmark=\hbox{}
+  \makeatother
+  \articletype{Technical Report}
+  \runningtitle{Gradient Estimation for Mixtures}
   \abstract{\input{abstract}}
   \maketitle
+  \markboth{Gradient Estimation for Mixtures}{Gradient Estimation for Mixtures}
 \else
   \date{}
   \maketitle

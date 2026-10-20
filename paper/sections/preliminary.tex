@@ -1,2 +1,52 @@
 \section{Preliminaries}
-% Add section content here.
+Let $\theta\in\mathbb R^m$ parameterize a density on $\mathbb R^d$,
+\begin{equation}
+ q_\theta(z)=\sum_{k=1}^K\pi_k(\theta)q_{k,\theta}(z),
+ \qquad \pi_k>0,\qquad \sum_k\pi_k=1,
+ \qquad \mathcal J(\theta)=\mathbb E_{q_\theta}[f_\theta(Z)].
+ \label{eq:objective}
+\end{equation}
+We assume positive densities on the interior of a parameter-independent support,
+differentiability, and integrable derivatives permitting interchange of
+differentiation and integration. For transport identities, boundary flux terms
+vanish under integration by parts.
+Variance comparisons additionally require finite second moments.
+Define responsibilities and fixed-sample derivatives by
+\begin{align}
+ r_k(z)&=\frac{\pi_kq_{k,\theta}(z)}{q_\theta(z)},
+ &s_\theta(z)&=\partial_\theta\log q_\theta(z),
+ &a_k&=\nabla_\theta\log\pi_k, \label{eq:responsibilities}\\
+ h_\theta(z)&=\nabla_z f_\theta(z),
+ &d_\theta(z)&=\partial_\theta f_\theta(z).
+ \label{eq:derivatives}
+\end{align}
+Here $\partial_\theta$ holds $z$ fixed; a total derivative through a sample
+transformation is written $\nabla_\theta$.
+For component reparameterizations, let
+$Z_k=T_{k,\theta}(\varepsilon_k)$, with
+$\varepsilon_k\sim\rho$ independent of $\theta$, and define the $d\times m$ matrix
+\begin{equation}
+ V_k(z)=\left.D_\theta T_{k,\theta}(\varepsilon)
+              \right|_{\varepsilon=T_{k,\theta}^{-1}(z)}.
+ \label{eq:component-velocity}
+\end{equation}
+Post-stratification requires differentiable component bijections on the common
+support. Stratification only requires differentiable maps and uses
+$D_\theta T_{k,\theta}(\varepsilon)$ directly, without an inverse.
+Let $\operatorname{sg}$ denote an operation that preserves a value and stops its
+derivative.
+
+For a fixed joint model $p(x,z)$, the ELBO is
+\begin{equation}
+ f_\theta(z)=\log p(x,z)-\log q_\theta(z),\qquad
+ \mathcal J(\theta)=\log p(x)-\mathrm{KL}(q_\theta\Vert p(\cdot\mid x)).
+ \label{eq:elbo}
+\end{equation}
+Then $d_\theta(z)=-s_\theta(z)$ and
+$\mathbb E_{q_\theta}[s_\theta(Z)]
+=\nabla_\theta\int q_\theta(z)\,dz=0$.
+Thus STL deletes $d_\theta$ from the estimators below. In automatic
+differentiation this means using
+$f_{\operatorname{sg}(\theta)}(z)=\log p(x,z)-\log q_{\operatorname{sg}(\theta)}(z)$,
+while retaining derivatives with respect to $z$.
+For a general parameter-dependent $f_\theta$, deleting $d_\theta$ is not valid.

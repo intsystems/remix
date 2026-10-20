@@ -1,0 +1,266 @@
+\documentclass[aspectratio=169]{beamer}
+
+\usepackage[T1,T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[main=russian,english]{babel}
+\usepackage{cmap}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{amssymb,amsfonts,amsmath}
+\usepackage{listings}
+
+\usecolortheme{beaver}
+\usefonttheme[onlymath]{serif}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[page number]
+\setbeamertemplate{blocks}[rounded=true,shadow=true]
+\setbeamersize{text margin left=0.5cm,text margin right=0.5cm}
+\setbeamerfont{author}{size=\normalsize}
+\setbeamerfont{institute}{size=\normalsize}
+\setbeamerfont{date}{size=\normalsize}
+\setbeamertemplate{enumerate item}{\insertenumlabel)}
+\setbeameroption{hide notes}
+
+\newcommand{\E}{\mathbb E}
+\newcommand{\sg}{\operatorname{stopgrad}}
+\newcommand{\KL}{\operatorname{KL}}
+\newcommand{\codefile}[1]{\par\medskip{\scriptsize\color{gray}\texttt{\detokenize{#1}}\par}}
+\lstset{language=Python,basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{darkred},commentstyle=\color{gray},
+  showstringspaces=false,columns=fullflexible,keepspaces=true,
+  breaklines=true,frame=none}
+
+\title{ReMix: reparameterization for mixtures}
+\subtitle{Proof of Concept}
+\author{Команда проекта: Александр Уденеев, Алексей Пономарев,\\Лина Горбунова, Максим Иванов}
+\institute{ИАД, МФТИ}
+\date{\empty}
+
+\begin{document}
+
+\begin{frame}
+  \thispagestyle{empty}
+  \maketitle
+\end{frame}
+
+\begin{frame}{Этап прототипа}
+  \begin{block}{Цель этапа}
+    Реализовать один простой оценщик в интерфейсе будущей библиотеки
+    и подготовить небольшой воспроизводимый эксперимент.
+  \end{block}
+  \begin{enumerate}
+    \item Представить смесь независимо от семейства компонент.
+    \item Получить скалярную функцию потерь для \texttt{backward()}.
+    \item Сохранить общий интерфейс для следующих оценщиков.
+  \end{enumerate}
+  \medskip
+  Реализован ScoreFunction как простой пример оценщика
+\end{frame}
+
+\begin{frame}{Повторение про область задачи}
+  \[
+    q_\theta(z)=\sum_{k=1}^{K}\pi_k q_{k,\phi_k}(z),
+    \qquad \pi=\operatorname{softmax}(a),\quad
+    \theta=(a,\phi_1,\ldots,\phi_K).
+  \]
+  
+  \begin{block}{Условия совместимости}
+    \begin{enumerate}
+        \item Одинаковый shape события.
+        \item Общая базовая мера.
+        \item Согласованные устройства и типы.
+        \item Компоненты без batch-измерений.
+    \end{enumerate}
+  \end{block}
+
+  \medskip
+  Оценщик принимает \texttt{Mixture}~--- отдельное распределение отклоняется.
+\end{frame}
+
+\begin{frame}{Архитектура текущей реализации}
+  \centering
+  \begin{tikzpicture}[
+    box/.style={draw=darkred,rounded corners,align=center,
+      text width=3.65cm,minimum height=1cm,font=\small},
+    link/.style={-{Latex[length=2mm]},thick,draw=darkred}]
+    \node[box] (q) {\texttt{Mixture}\\\texttt{sample(), log\_prob()}};
+    \node[box,right=0.65cm of q] (est) {\texttt{ScoreFunction}\\\texttt{estimate(q, objective)}};
+    \node[box,right=0.65cm of est] (result) {\texttt{EstimateResult}\\\texttt{value, surrogate\_loss}};
+    \node[box,below=0.65cm of q] (params) {Параметры пользователя:\\логиты и параметры компонент};
+    \node[box,below=0.65cm of est] (obj) {\texttt{ELBOObjective}\\\texttt{evaluate(q, z)}};
+    \node[box,below=0.65cm of result] (opt) {\texttt{backward()}\\\texttt{torch.optim.Adam}};
+    \draw[link] (params) -- (q);
+    \draw[link] (q) -- (est);
+    \draw[link] (obj) -- (est);
+    \draw[link] (est) -- (result);
+    \draw[link] (result) -- (opt);
+  \end{tikzpicture}
+  \par\medskip\raggedright
+  После шага оптимизатора заново создаётся смесь
+  с текущими параметрами.
+  \codefile{src/remix/}
+\end{frame}
+
+\begin{frame}{Как представлена смесь}
+  \texttt{Mixture(logits, components)} хранит список распределений PyTorch.
+  \[
+    \ell_k(z)=\log\pi_k+\log q_k(z),\qquad
+    \log q(z)=\operatorname{logsumexp}_k\ell_k(z).
+  \]
+  \[
+    r_k(z)=\operatorname{softmax}_k\ell(z)
+           =\frac{\pi_kq_k(z)}{q(z)}.
+  \]
+  \begin{itemize}
+    \item \texttt{log\_prob}: устойчивая агрегация плотностей компонент.
+    \item \texttt{responsibilities}: вероятности принадлежности компонентам.
+    \item \texttt{sample}: выбор индекса из Categorical и значения компоненты.
+  \end{itemize}
+  \medskip
+  Генерируются кандидаты от всех компонент, затем выбирается один.
+  \codefile{src/remix/distributions.py}
+\end{frame}
+
+\begin{frame}{Целевая функция}
+  \[
+    \mathcal L(\theta)=\E_{z\sim q_\theta}[f_\theta(z)],
+    \qquad f_\theta(z)=\log p(x,z)-\log q_\theta(z).
+  \]
+  \begin{block}{\texttt{ELBOObjective(log\_joint)}}
+    Принимает пользовательскую функцию $\log p(x,z)$.
+    Метод \texttt{evaluate(q, z)} возвращает значения $f_\theta(z)$.
+  \end{block}
+  \begin{center}
+    \begin{tabular}{ll}
+      \toprule
+      Поле результата & Назначение \\
+      \midrule
+      \texttt{value} & Среднее $f_\theta(z)$ без градиента \\
+      \texttt{surrogate\_loss} & Скаляр для минимизации через \texttt{backward()} \\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+  \medskip
+  В бенчмарке $p$ --- нормированное целевое распределение:
+  $\mathcal L(\theta)=-\KL(q_\theta\Vert p)$.
+  \codefile{src/remix/objectives.py}
+\end{frame}
+
+\begin{frame}{Score-function}
+  При допустимости дифференцирования под интегралом:
+  \[
+    \nabla_\theta\mathcal L
+      =\E_{q_\theta}\!\left[
+        f_\theta(z)\nabla_\theta\log q_\theta(z)
+        +\partial_\theta f_\theta(z)\right].
+  \]
+  \[
+    \widehat g=\frac1N\sum_{i=1}^N
+      \left[(f_\theta(z_i)-b)\nabla_\theta\log q_\theta(z_i)
+        +\partial_\theta f_\theta(z_i)\right],
+    \quad z_i\sim q_\theta.
+  \]
+  \begin{itemize}
+    \item Производные вычисляются при фиксированных $z_i$.
+    \item $b$ --- фиксированный скаляр, независимый от текущих сэмплов.
+    \item $\E_q[\nabla\log q]=0$: такой baseline не меняет ожидание оценки.
+  \end{itemize}
+  \begin{block}{Почему это удобная базовая реализация}
+    Нужен дифференцируемый \texttt{log\_prob}~--- производная через выбор
+    компоненты и \texttt{rsample} не требуются.
+  \end{block}
+  \codefile{src/remix/estimators.py}
+\end{frame}
+
+
+\begin{frame}[fragile]{Как нужный градиент получает autograd}
+  \begin{lstlisting}
+z = q.sample(torch.Size([self.n_samples])).detach()
+log_q = q.log_prob(z)
+values = objective.evaluate(q, z)
+
+surrogate = (values.detach() - self.baseline) * log_q + values
+return EstimateResult(values.detach().mean(), -surrogate.mean())
+  \end{lstlisting}
+  \[
+    S(\theta)=\frac1N\sum_i
+       \left[(\sg(f_\theta(z_i))-b)\log q_\theta(z_i)+f_\theta(z_i)\right],
+    \qquad \nabla_\theta S=\widehat g.
+  \]
+  \begin{itemize}
+    \item \texttt{detach()} у веса исключает лишнее слагаемое производной.
+    \item Минус перед средним переводит максимизацию в минимизацию.
+  \end{itemize}
+  \codefile{src/remix/estimators.py}
+\end{frame}
+
+\begin{frame}[fragile]{Пользовательский цикл обучения}
+  \begin{lstlisting}
+components = [Normal(-2.0, 1.0), Laplace(2.0, 1.0)]
+logits = torch.nn.Parameter(torch.zeros(2))
+target = Mixture(torch.tensor([0.2, 0.8]).log(), components)
+objective = ELBOObjective(target.log_prob)
+estimator = ScoreFunction(n_samples=512)
+optimizer = torch.optim.Adam([logits], lr=0.05)
+
+for step in range(300):
+    optimizer.zero_grad()
+    q = Mixture(logits, components)
+    result = estimator.estimate(q, objective)
+    result.surrogate_loss.backward()
+    optimizer.step()
+  \end{lstlisting}
+  \medskip
+  Здесь обучаются только веса~--- параметры компонент фиксированы.
+  \codefile{examples/benchmark.py}
+\end{frame}
+
+\begin{frame}{Бенчмарк}
+  \begin{center}
+    \begin{tabular}{lll}
+      \toprule
+      Сценарий & Компонента 1 & Компонента 2 \\
+      \midrule
+      Гауссовская смесь & $\mathcal N(-2,1)$ & $\mathcal N(2,1)$ \\
+      Смесь Лапласа & $\operatorname{Laplace}(-2,1)$ & $\operatorname{Laplace}(2,1)$ \\
+      Разные семейства & $\mathcal N(-2,1)$ & $\operatorname{Laplace}(2,1)$ \\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+  \begin{itemize}
+    \item Начальные веса $(0.5,0.5)$, целевые веса $(0.2,0.8)$.
+    \item Adam: шаг $0.05$, 300 итераций, 512 сэмплов на итерацию.
+    \item Seed: 42; оценка KL по 10\,000 сэмплам до и после обучения.
+  \end{itemize}
+  \[
+    \widehat{\KL}(q\Vert p)
+      =\frac1M\sum_{j=1}^M[\log q(z_j)-\log p(z_j)],\quad z_j\sim q.
+  \]
+\end{frame}
+
+\begin{frame}[fragile]{Результат бенчмарка}
+  \begin{lstlisting}
+Normal mixture: estimated KL 0.2001 -> 0.0000
+Learned weights: [0.19305355846881866, 0.8069464564323425]
+
+Laplace mixture: estimated KL 0.1624 -> 0.0003
+Learned weights: [0.1880115270614624, 0.8119884729385376]
+
+Normal + Laplace mixture: estimated KL 0.1755 -> 0.0001
+Learned weights: [0.191883847117424, 0.8081161975860596]
+  \end{lstlisting}
+\end{frame}
+
+\begin{frame}{Вывод}
+  \begin{block}{Результат текущего этапа}
+    Написан минимальный прототип: смесь $\to$ ELBO $\to$ score-function $\to$ стандартный оптимизатор PyTorch.
+  \end{block}
+  
+  \begin{block}{Дальнейшие планы}
+  Далее будем добавлять следующие оценщики через существующий интерфейс.
+  \end{block}
+\end{frame}
+
+\end{document}
