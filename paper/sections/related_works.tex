@@ -1,34 +1,22 @@
 \section{Related Work}
-Score-function estimators underlie black-box variational inference
-\citep{ranganath2014bbvi}; pathwise estimators differentiate a parameterized
-transformation of parameter-independent noise
-\citep{kingma2014vae,rezende2014backprop}. Their assumptions and variance-reduction
-mechanisms are reviewed by \citet{mohamed2020gradients}. For ELBO gradients,
-\citet{roeder2017stl} remove the explicit variational-density score term, whose
-expectation is zero. This modification preserves unbiasedness but does not imply
-a variance reduction for every mixture estimator \citep{burroni2026mixture}.
+Methods for discrete random variables provide further ways to handle a mixture's
+categorical selector. Concrete and Gumbel--Softmax use a smooth,
+temperature-controlled approximation and differentiate the resulting relaxed
+objective \citep{maddison2017concrete,jang2017gumbel}. REBAR uses a continuous
+relaxation as a control variate with a correction that preserves unbiasedness
+for the discrete objective \citep{tucker2017rebar}. RELAX learns a differentiable
+control variate jointly with the model \citep{grathwohl2018relax}. ARSM constructs
+coupled categorical samples through augmentation and category swaps, sharing
+randomness to reduce gradient variance \citep{yin2019arsm}. These approaches
+offer alternatives for optimizing mixture selection probabilities.
 
-\citet{graves2016mixture} derives mixture gradients using conditional distribution
-functions. \citet{figurnov2018implicit} formulate the general implicit
-reparameterization identity, avoiding differentiation of an inverse transformation.
-\citet{jankowiak2018transport} connect pathwise gradients to the continuity
-equation; \citet{jankowiak2019multivariate} develop multivariate mixture transport
-and a hybrid estimator combining pathwise component derivatives with score-based
-weight derivatives. The latter is the precursor of the post-stratified estimator
-analyzed by \citet{burroni2026mixture}.
-
-Stratified mixture gradients appear in \citet{roeder2017stl} with shared base
-noise and in \citet{morningstar2021mixtures} with independent component samples.
-The latter also study a stratified importance-weighted objective; here we retain
-the ordinary expectation, including the standard ELBO.
-\citet{miller2017boosting} instead construct a mixture incrementally by adding
-components. Concrete and Gumbel--Softmax relaxations
-\citep{maddison2017concrete,jang2017gumbel} replace a discrete selector with a
-continuous variable; at finite temperature, gradients of the relaxed objective
-are generally biased for the original mixture objective.
-
-An existing PyTorch implementation provides implicit mixture gradients for
-factorized components \citep{simkusMixture}. The request for native
-\texttt{MixtureSameFamily.rsample()} support is documented in PyTorch issue
-\#39178 \citep{pytorch39178}. These software references inform implementation
-requirements rather than estimator correctness.
+Other work extends pathwise differentiation to broader continuous families.
+Generalized reparameterization combines a sample derivative with a score
+correction for parameter-dependent transformed noise \citep{ruiz2016generalized}.
+\citet{naesseth2017rejection} derive gradients through acceptance--rejection
+samplers, enabling applications to distributions such as Gamma and Dirichlet.
+These methods provide useful directions for extending the component families
+supported by ReMix. For the initial implementation, an existing PyTorch package
+for implicit mixture gradients provides a software reference
+\citep{simkusMixture}; the discussion of mixture sampling derivatives in PyTorch
+issue \#39178 gives additional implementation context \citep{pytorch39178}.

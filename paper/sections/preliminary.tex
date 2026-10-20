@@ -1,52 +1,42 @@
-\section{Preliminaries}
-Let $\theta\in\mathbb R^m$ parameterize a density on $\mathbb R^d$,
+\section{Problem Setup}
+Let $\theta\in\mathbb R^m$ contain the parameters of a mixture density on
+$\mathbb R^d$. Our objective and mixture are
 \begin{equation}
- q_\theta(z)=\sum_{k=1}^K\pi_k(\theta)q_{k,\theta}(z),
- \qquad \pi_k>0,\qquad \sum_k\pi_k=1,
- \qquad \mathcal J(\theta)=\mathbb E_{q_\theta}[f_\theta(Z)].
+ \mathcal J(\theta)=\mathbb E_{q_\theta}[f_\theta(Z)],
+ \qquad q_\theta(z)=\sum_{k=1}^K\pi_k(\theta)q_{k,\theta}(z),
+ \qquad \pi_k>0,\quad \sum_k\pi_k=1.
  \label{eq:objective}
 \end{equation}
-We assume positive densities on the interior of a parameter-independent support,
-differentiability, and integrable derivatives permitting interchange of
-differentiation and integration. For transport identities, boundary flux terms
-vanish under integration by parts.
-Variance comparisons additionally require finite second moments.
-Define responsibilities and fixed-sample derivatives by
-\begin{align}
- r_k(z)&=\frac{\pi_kq_{k,\theta}(z)}{q_\theta(z)},
- &s_\theta(z)&=\partial_\theta\log q_\theta(z),
- &a_k&=\nabla_\theta\log\pi_k, \label{eq:responsibilities}\\
- h_\theta(z)&=\nabla_z f_\theta(z),
- &d_\theta(z)&=\partial_\theta f_\theta(z).
- \label{eq:derivatives}
-\end{align}
-Here $\partial_\theta$ holds $z$ fixed; a total derivative through a sample
-transformation is written $\nabla_\theta$.
-For component reparameterizations, let
-$Z_k=T_{k,\theta}(\varepsilon_k)$, with
-$\varepsilon_k\sim\rho$ independent of $\theta$, and define the $d\times m$ matrix
-\begin{equation}
- V_k(z)=\left.D_\theta T_{k,\theta}(\varepsilon)
-              \right|_{\varepsilon=T_{k,\theta}^{-1}(z)}.
- \label{eq:component-velocity}
-\end{equation}
-Post-stratification requires differentiable component bijections on the common
-support. Stratification only requires differentiable maps and uses
-$D_\theta T_{k,\theta}(\varepsilon)$ directly, without an inverse.
-Let $\operatorname{sg}$ denote an operation that preserves a value and stops its
-derivative.
+We assume differentiable densities that are positive on the interior of a common,
+parameter-independent support, with integrable derivatives allowing
+differentiation under the integral. Pathwise identities additionally require
+vanishing boundary flux; variance comparisons require finite second moments.
 
-For a fixed joint model $p(x,z)$, the ELBO is
+The responsibility $r_k(z)=\pi_kq_{k,\theta}(z)/q_\theta(z)$ is the conditional
+probability that component $k$ generated $z$. We write
+$a_k=\nabla_\theta\log\pi_k$ for the weight score and
+$s_\theta(z)=\partial_\theta\log q_\theta(z)$ for the mixture score.
+For the objective, $h_\theta(z)=\nabla_z f_\theta(z)$ describes its sensitivity
+to the sample, while $d_\theta(z)=\partial_\theta f_\theta(z)$ captures direct
+parameter dependence at fixed $z$.
+
+Component samples take the form $Z_k=T_{k,\theta}(\varepsilon_k)$, where
+$\varepsilon_k\sim\rho$ has a parameter-independent distribution. Stratification
+uses derivatives of these maps. Post-stratification also uses their inverses;
+for this method, we assume differentiable component bijections onto the common
+support and write $V_k(z)$ for $D_\theta T_{k,\theta}$ evaluated at
+$\varepsilon_k=T_{k,\theta}^{-1}(z)$.
+
+For a fixed model $p(x,z)$, variational inference maximizes the evidence lower
+bound (ELBO), with integrand
 \begin{equation}
- f_\theta(z)=\log p(x,z)-\log q_\theta(z),\qquad
- \mathcal J(\theta)=\log p(x)-\mathrm{KL}(q_\theta\Vert p(\cdot\mid x)).
+ f_\theta(z)=\log p(x,z)-\log q_\theta(z),
+ \qquad d_\theta(z)=-s_\theta(z).
  \label{eq:elbo}
 \end{equation}
-Then $d_\theta(z)=-s_\theta(z)$ and
-$\mathbb E_{q_\theta}[s_\theta(Z)]
-=\nabla_\theta\int q_\theta(z)\,dz=0$.
-Thus STL deletes $d_\theta$ from the estimators below. In automatic
-differentiation this means using
-$f_{\operatorname{sg}(\theta)}(z)=\log p(x,z)-\log q_{\operatorname{sg}(\theta)}(z)$,
-while retaining derivatives with respect to $z$.
-For a general parameter-dependent $f_\theta$, deleting $d_\theta$ is not valid.
+The score has zero expectation, so omitting $d_\theta$ preserves the expected
+ELBO gradient. This is the STL modification \citep{roeder2017stl}.
+In automatic differentiation, it freezes the parameters of $q$ inside the
+log-density term while preserving its derivative through $z$. We denote an
+operation that preserves a value and stops its derivative by
+$\operatorname{sg}$. For general objectives, the estimators retain $d_\theta$.

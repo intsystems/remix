@@ -1,7 +1,8 @@
-We specify four unbiased estimators of gradients of mixture expectations:
-score-function, stratified, implicit reparameterization, and post-stratified
-estimators. A common formulation separates mixture-weight derivatives, component
-transport, and explicit objective dependence. For the evidence lower bound, we
-state the Sticking the Landing modification and give first-order
-automatic-differentiation constructions, applicability conditions, and evaluation
-costs.
+Finite mixture distributions provide flexible posterior approximations whose
+optimization requires gradients through both component parameters and mixture
+weights. We review the main approaches to this problem and describe four
+unbiased estimators: score-function, stratified, implicit reparameterization,
+and post-stratified. For each method, we explain its construction, requirements,
+and computational cost, including the Sticking the Landing modification for
+variational inference. These estimators will form ReMix, a PyTorch library with
+a shared interface for optimization and comparison.
