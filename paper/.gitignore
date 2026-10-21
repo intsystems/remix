@@ -10,4 +10,4 @@
 /main.out
 /main.synctex.gz
 /main.log
-/main.pdf
+# Keep main.pdf versioned alongside the report sources.
