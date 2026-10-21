@@ -1,37 +1,61 @@
-site_name: SoftwareTemplate-Simplified
+site_name: ReMix
+site_description: Monte Carlo gradient estimation for finite mixtures
+site_url: https://intsystems.github.io/remix/
+repo_url: https://github.com/intsystems/remix
+repo_name: intsystems/remix
 docs_dir: source
+
 plugins:
+- search
 - mkdocstrings:
     default_handler: python
     handlers:
-        python:
-          paths: [../src]
-          options:
-            show_signature_annotations: true
-            docstring_style: google
-            signature_crossrefs: true
-            modernize_annotations: true
-            show_source: false
-            members_order: 'source'
-            show_if_no_docstring: true
-            show_symbol_type_heading: true
-            show_symbol_type_toc: true
-            merge_init_into_class: true
-            heading_level: 3
-            parameter_headings: true
-            show_root_heading: true
-      
-
-          import:
-          - url: https://docs.python-requests.org/en/master/objects.inv
-- search
-
+      python:
+        paths: [../src]
+        inventories:
+        - https://docs.python.org/3/objects.inv
+        - https://docs.pytorch.org/docs/stable/objects.inv
+        options:
+          show_signature_annotations: true
+          docstring_style: google
+          signature_crossrefs: true
+          modernize_annotations: true
+          show_source: false
+          members_order: source
+          show_if_no_docstring: true
+          show_symbol_type_heading: true
+          show_symbol_type_toc: true
+          merge_init_into_class: true
+          heading_level: 2
+          parameter_headings: true
+          show_root_heading: false
+          filters: ["!^_"]
 
 theme:
   name: material
+  features:
+  - content.code.copy
+  - navigation.sections
+  palette:
+  - media: "(prefers-color-scheme: light)"
+    scheme: default
+    toggle:
+      icon: material/brightness-7
+      name: Switch to dark mode
+  - media: "(prefers-color-scheme: dark)"
+    scheme: slate
+    toggle:
+      icon: material/brightness-4
+      name: Switch to light mode
+
+markdown_extensions:
+- admonition
+- pymdownx.highlight
+- pymdownx.superfences
 
 nav:
-  - Home: index.md
-  - Code docummentation:
-    - Train: autodoc/train.md 
-  
+- Home: index.md
+- API reference:
+  - Distributions: api/distributions.md
+  - Objectives: api/objectives.md
+  - Estimators: api/estimators.md

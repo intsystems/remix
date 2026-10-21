@@ -120,3 +120,6 @@ logs/
 */mnist
 *.csv
 !.dvc
+
+# MkDocs build output
+docs/site/
