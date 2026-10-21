@@ -1,17 +1,34 @@
 \section{Introduction}
-Finite mixtures provide tractable densities with sufficient flexibility to represent
-multimodality and heterogeneous posterior uncertainty
-\citep{miller2017boosting,morningstar2021mixtures}. Their use in variational inference
-requires differentiating expectations with respect to both component parameters and
-mixture weights. Exact sampling is straightforward: draw a categorical component
-index, then sample its continuous distribution. However, differentiating only the
-selected component omits the contribution from changing selection probabilities.
+Variational inference approximates a posterior by optimizing a tractable density.
+Finite mixtures make the approximation more expressive by representing several
+modes with separate components. Variational boosting adds these components
+incrementally \citep{miller2017boosting}, while automatic differentiation
+variational inference with mixtures jointly optimizes their parameters and weights
+\citep{morningstar2021mixtures}.
 
-This report specifies four unbiased gradient estimators: a score-function baseline
-with the Sticking the Landing (STL) modification, a multi-sample stratified
-estimator, implicit reparameterization, and a single-sample post-stratified
-estimator \citep{roeder2017stl,figurnov2018implicit,burroni2026mixture}.
-We give their assumptions, gradient formulas, and automatic-differentiation
-constructions in a common notation. The comparison concerns exact mixture
-expectations and distinguishes the number of objective evaluations from the cost
-of evaluating all component densities.
+Sampling a mixture involves drawing a categorical index and then a continuous
+value from the chosen component. Training requires expectation gradients that
+account for parameter changes in both stages. Score-function estimators use
+derivatives of the log density \citep{ranganath2014bbvi}, while pathwise estimators
+differentiate the sampled value, as in variational autoencoders
+\citep{kingma2014vae,rezende2014backprop}. Each approach has its own variance
+and computational requirements \citep{mohamed2020gradients}.
+
+Several methods adapt these ideas to mixtures. Stratification samples every
+component and combines the resulting gradients using the mixture weights
+\citep{roeder2017stl,morningstar2021mixtures}. Implicit reparameterization obtains
+sample derivatives from distribution functions
+\citep{graves2016mixture,figurnov2018implicit}. Transport-based methods describe
+how probability mass moves as parameters change
+\citep{jankowiak2018transport,jankowiak2019multivariate}. This perspective also
+leads to a post-stratified estimator, which averages component derivatives at a
+single mixture sample. \citet{burroni2026mixture} bring these approaches into a
+common formulation and analyze their computational and variance properties.
+
+We will implement four algorithms as the ReMix library: a score-function
+baseline, stratification, implicit reparameterization, and post-stratification.
+The library will provide a shared PyTorch interface, starting with mixtures of
+diagonal Gaussian components, and support the Sticking the Landing (STL)
+modification for evidence lower bound gradients \citep{roeder2017stl}.
+This report specifies the estimators and their implementation requirements as a
+basis for comparing gradient variance, optimization progress, and runtime.

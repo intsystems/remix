@@ -1,0 +1,33 @@
+\section{Planned Library}
+ReMix will expose the four estimators through an interface accepting a mixture
+and an objective. Diagonal Gaussian components will have trainable logits, means,
+and positive scales. Each estimator will return an objective estimate for logging
+and a scalar surrogate for automatic differentiation, with optional STL for
+the ELBO.
+
+Table~\ref{tab:estimators} summarizes the requirements. Each mixture density
+evaluation includes all $K$ components; stratification repeats this work at every
+sample point. Shared operations will use log-sum-exp for mixture log densities,
+normalized component log densities for responsibilities, and triangular solves
+for implicit derivatives.
+
+\begin{table}[htbp]
+ \centering
+ \caption{Estimator requirements. Stratification uses one sample per component.}
+ \label{tab:estimators}
+ \small
+ \begin{tabular}{@{}lcl@{}}
+  \toprule
+  Estimator & Objective evaluations & Required operations \\
+  \midrule
+  Score-function & $1$ & Mixture log-density derivatives \\
+  Stratified & $K$ & Component sampling derivatives \\
+  Implicit & $1$ & Conditional CDFs and a Jacobian solve \\
+  Post-stratified & $1$ & Inverse component maps and responsibilities \\
+  \bottomrule
+ \end{tabular}
+\end{table}
+
+We will compare gradient variance, ELBO progress, runtime, and memory use across
+component counts, overlap levels, and event dimensions. Progress per model
+evaluation and per unit of time will measure practical optimization efficiency.
