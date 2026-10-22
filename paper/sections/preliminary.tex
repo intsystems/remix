@@ -40,3 +40,22 @@ In automatic differentiation, it freezes the parameters of $q$ inside the
 log-density term while preserving its derivative through $z$. We denote an
 operation that preserves a value and stops its derivative by
 $\operatorname{sg}$. For general objectives, the estimators retain $d_\theta$.
+
+As a running example, consider a mixture of two univariate Gaussians,
+$q_\theta(z)=\pi\mathcal N(z;\mu_1,\sigma_1^2)
++(1-\pi)\mathcal N(z;\mu_2,\sigma_2^2)$, where
+$\pi=\operatorname{sigmoid}(\alpha)$ and $\sigma_k>0$.
+We use the objective $f(z)=-z^2/2$, which favors samples close to zero.
+Writing $m_k=-(\mu_k^2+\sigma_k^2)/2$ for its expectation in component $k$,
+we obtain
+\begin{equation}
+ \mathcal J=\pi m_1+(1-\pi)m_2,\qquad
+ \partial_\alpha\mathcal J=\pi(1-\pi)(m_1-m_2),\qquad
+ \partial_{\mu_k}\mathcal J=-\pi_k\mu_k,
+ \label{eq:running-example}
+\end{equation}
+where $\pi_1=\pi$ and $\pi_2=1-\pi$. Thus, ascent moves each mean toward zero
+and shifts weight toward the component with the larger expected objective.
+The known gradient lets us follow how each estimator recovers the same
+quantity from different random samples. Here $h(z)=-z$ and $d(z)=0$;
+the ELBO additionally has the direct density derivative described above.

@@ -2,7 +2,9 @@ Finite mixture distributions provide flexible posterior approximations whose
 optimization requires gradients through both component parameters and mixture
 weights. We review the main approaches to this problem and describe four
 unbiased estimators: score-function, stratified, implicit reparameterization,
-and post-stratified. For each method, we explain its construction, requirements,
-and computational cost, including the Sticking the Landing modification for
-variational inference. These estimators will form ReMix, a PyTorch library with
-a shared interface for optimization and comparison.
+and post-stratified. A running example connects their sampling procedures and
+gradients, and a comparison explains their variance and computational tradeoffs,
+including the Sticking the Landing modification for variational inference.
+These estimators will form ReMix, a PyTorch library that separates mixture
+distributions, objectives, and gradient estimation so that methods can be
+exchanged within the same optimization loop.

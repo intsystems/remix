@@ -2070,10 +2070,10 @@
    \lst@Key{numbers}{none}{%
     \let\lst@PlaceNumber\@empty
     \lstKV@SwitchCases{#1}%
-    {none&\\%
-     left&\def\lst@PlaceNumber{{\normalfont\lst@numberstyle
+    {none:\\%
+     left:\def\lst@PlaceNumber{{\normalfont\lst@numberstyle
             \hb@xt@\dimexpr1em+\lst@numbersep{\thelstnumber\hss}}}\\%
-     right&\def\lst@PlaceNumber{\rlap{\normalfont
+     right:\def\lst@PlaceNumber{\rlap{\normalfont
                 \kern\linewidth \kern\lst@numbersep
                 \lst@numberstyle{\thelstnumber}}}%
     }{\PackageError{Listings}{Numbers #1 unknown}\@ehc}}}

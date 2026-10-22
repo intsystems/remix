@@ -5,7 +5,9 @@ above, with optional STL for the ELBO.
 
 Algorithms~\ref{alg:score}--\ref{alg:poststratified} return an objective estimate
 and a scalar surrogate $\mathcal S$; differentiating $\mathcal S$ gives the
-estimated ascent gradient. A loss-minimizing optimizer uses $-\mathcal S$.
+estimated ascent gradient. The first output is detached for logging. For a
+loss-minimizing optimizer, the training loss is $-\mathcal S$, corresponding to
+\texttt{surrogate\_loss} in the library interface.
 Write $\varphi_\theta(z)=f_\theta(z)$ for ordinary
 differentiation. With STL, use
 $\varphi_\theta(z)=\log p(x,z)-\log q_{\operatorname{sg}(\theta)}(z)$, retaining
@@ -36,12 +38,23 @@ The baseline is detached in the score coefficient. With softmax logits
 $\alpha$ and component parameters independent of $\alpha$, the weight gradient
 is $(f_\theta(Z)-b)(r_j(Z)-\pi_j)$ for logit $\alpha_j$ with STL.
 
+In the running example, draw $c\sim\mathrm{Cat}(\pi,1-\pi)$ and
+$\varepsilon\sim\mathcal N(0,1)$, giving $z=\mu_c+\sigma_c\varepsilon$.
+The logit estimate is $(f(z)-b)(r_1(z)-\pi)$, while the estimate for mean
+$\mu_k$ is $(f(z)-b)r_k(z)(z-\mu_k)/\sigma_k^2$.
+Both use the objective value to scale a density derivative. Their expectations
+give the derivatives in Eq.~\ref{eq:running-example}, with the baseline
+controlling how objective values are centered.
+
 \begin{algorithm}[H]
  \small
  \caption{Score-function sampling and surrogate}
  \label{alg:score}
  \KwIn{Mixture $q_\theta$, component maps $T_{k,\theta}$, objective
         $\varphi_\theta$, baseline $b$}
+ \KwOut{$(\widehat{\mathcal J},\mathcal S)$: detached objective estimate for
+         logging and ascent surrogate, $\nabla_\theta\mathcal S=
+         \widehat g_{\mathrm{SF}}$}
  Draw $c\sim\mathrm{Cat}(\pi)$ and $\varepsilon\sim\rho$\;
  $z_0\leftarrow\operatorname{sg}(T_{c,\theta}(\varepsilon))$\;
  $v\leftarrow\varphi_\theta(z_0)$;\quad $\ell\leftarrow\log q_\theta(z_0)$\;
@@ -75,6 +88,9 @@ density in the ELBO.
  \label{alg:stratified}
  \KwIn{Weights $\pi$, component maps $T_{k,\theta}$, objective
         $\varphi_\theta$, fixed counts $N_k\geq1$}
+ \KwOut{$(\widehat{\mathcal J},\mathcal S)$: detached objective estimate for
+         logging and ascent surrogate, $\nabla_\theta\mathcal S=
+         \widehat g_{\mathrm{ST}}$}
  $\mathcal S\leftarrow0$\;
  \For{$k=1,\ldots,K$}{
   \For{$n=1,\ldots,N_k$}{
@@ -92,6 +108,14 @@ sample budget to be allocated across components. One sample per component
 requires $K$ objective evaluations. For a chain of $T$ conditional mixtures,
 full enumeration requires $\prod_{t=1}^T K_t$ evaluations, where $K_t$ is the
 component count at layer $t$. This growth motivates single-sample methods.
+
+For the two-Gaussian example, stratification draws independent
+$z_1=\mu_1+\sigma_1\varepsilon_1$ and
+$z_2=\mu_2+\sigma_2\varepsilon_2$. With one sample per component, the logit
+estimate becomes $\pi(1-\pi)(f(z_1)-f(z_2))$, and the mean estimates are
+$-\pi z_1$ and $-(1-\pi)z_2$. Each update directly compares both components,
+using two objective evaluations. Averaging these expressions recovers the
+component expectations and mean gradients in Eq.~\ref{eq:running-example}.
 
 \subsection{Implicit reparameterization}
 Implicit reparameterization differentiates an exact mixture sample through a
@@ -129,12 +153,23 @@ implicit gradient. The method requires one objective evaluation, CDF derivatives
 and a Jacobian solve. A generic reverse-mode construction costs $O(dC_S+d^2)$,
 where $C_S$ is the cost of evaluating $S_\theta$.
 
+In the running example, let $F_k$ denote the CDF of component $k$.
+The standardization is $F_\theta(z)=\pi F_1(z)+(1-\pi)F_2(z)$, giving
+$\partial_\alpha z=-\pi(1-\pi)(F_1(z)-F_2(z))/q_\theta(z)$ and
+$\partial_{\mu_k}z=r_k(z)$. Multiplying by $h(z)=-z$ yields the objective
+gradients. The weight derivative describes how the sampled location moves
+when the mixture weight changes while its cumulative probability stays fixed.
+This uses one objective evaluation and the CDFs of both components.
+
 \begin{algorithm}[H]
  \small
  \caption{Implicit sampling and surrogate}
  \label{alg:implicit}
  \KwIn{Weights $\pi$, component maps $T_{k,\theta}$, standardization
         $S_\theta$, objective $\varphi_\theta$}
+ \KwOut{$(\widehat{\mathcal J},\mathcal S)$: detached objective estimate for
+         logging and ascent surrogate, $\nabla_\theta\mathcal S=
+         \widehat g_{\mathrm{IR}}$}
  Draw $c\sim\mathrm{Cat}(\pi)$ and $\varepsilon\sim\rho$\;
  $z_0\leftarrow\operatorname{sg}(T_{c,\theta}(\varepsilon))$\;
  $s\leftarrow S_\theta(z_0)$;\quad
@@ -164,6 +199,14 @@ Component parameters receive pathwise derivatives, and trainable weights receive
 the score contribution. With independent softmax logits, the latter is
 $f_\theta(Z)(r_j(Z)-\pi_j)$.
 
+Returning to the example, post-stratification draws one value $z$ and recovers
+$e_k=(z-\mu_k)/\sigma_k$ for both components. Its mean estimate is
+$-r_k(z)z$, which coincides with the implicit estimate in this univariate
+Gaussian case. Its logit estimate is $f(z)(r_1(z)-\pi)$, the same as the
+score-function estimate with zero baseline. The example separates the two
+roles of the method: responsibility-weighted sample derivatives update the
+component parameters, while a score term updates the mixture weights.
+
 Algorithm~\ref{alg:poststratified} draws one component to obtain $z_0$, then
 recovers a base-noise value for every component at that same point. For diagonal
 Gaussians, the inverse map is
@@ -188,6 +231,9 @@ applies ordinary differentiation or STL to the first term.
  \label{alg:poststratified}
  \KwIn{Mixture $q_\theta$, component maps $T_{k,\theta}$ and their inverses,
         objective $\varphi_\theta$}
+ \KwOut{$(\widehat{\mathcal J},\mathcal S)$: detached objective estimate for
+         logging and ascent surrogate, $\nabla_\theta\mathcal S=
+         \widehat g_{\mathrm{PS}}$}
  Draw $c\sim\mathrm{Cat}(\pi)$ and $\varepsilon\sim\rho$\;
  $z_0\leftarrow\operatorname{sg}(T_{c,\theta}(\varepsilon))$\;
  \For{$k=1,\ldots,K$}{
