@@ -39,6 +39,29 @@
 % Colour and algorithms.
 \usepackage[dvipsnames]{xcolor}
 \usepackage[linesnumbered,ruled]{algorithm2e}
+\usepackage{listings}
+% The bundled publisher style prefixes entries in caption lists.
+\makeatletter
+\providecommand{\plist@lstlisting}{\lstlistingname\space}
+\makeatother
+\lstdefinestyle{remixpython}{
+  language=Python,
+  basicstyle=\small\ttfamily,
+  keywordstyle=\bfseries,
+  commentstyle=\itshape\color{black!60},
+  stringstyle=\color{black!75},
+  backgroundcolor=\color{black!3},
+  frame=single,
+  rulecolor=\color{black!25},
+  framerule=0.3pt,
+  framesep=5pt,
+  showstringspaces=false,
+  keepspaces=true,
+  columns=fullflexible,
+  breaklines=true,
+  tabsize=4,
+  captionpos=b
+}
 
 % References and bibliography.
 \usepackage[numbers,square,sort&compress]{natbib}

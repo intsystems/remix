@@ -1,0 +1,74 @@
+\section{Comparing the Estimators}
+\label{sec:comparison}
+The running example shows how all four methods recover the same expected
+gradient while using different information from the mixture. Score-function
+estimation weights density derivatives by the observed objective. Stratification
+samples every component and differentiates their weighted objectives. Implicit
+reparameterization moves one sampled point while keeping its standardized value
+fixed. Post-stratification uses one point to average the sample derivatives of
+all components, retaining a score term for the weights. These differences
+determine both the randomness in an update and the work needed to compute it.
+
+For score-function estimation, the objective value scales the entire density
+score, making the baseline an important part of the comparison. Stratification
+removes the categorical draw by assigning samples to every component; its
+remaining randomness comes from sampling within those components. This also
+ensures that a component with a small mixture weight receives samples in each
+update. Post-stratification instead averages the component derivatives
+conditional on one sampled value. Its Rao--Blackwell guarantee compares it with
+the corresponding estimator that uses only the selected component's pathwise
+and weight-score terms \citep{burroni2026mixture}. Comparing it with full
+stratification or implicit reparameterization requires examining the objective,
+the mixture, and the sample budget. In the running example, implicit and
+post-stratified estimates agree for the means but differ for the mixture weight,
+so even within one problem the comparison depends on which parameters are
+being optimized.
+
+The available operations also affect the choice.
+Table~\ref{tab:estimators} summarizes one update of each method. Score-function
+estimation needs sampling and mixture log-density derivatives, making it a
+useful baseline for a broad range of component families. Stratification adds
+component sampling derivatives and permits separate sample counts for each
+component. Post-stratification uses inverse component maps to obtain averaged
+sample derivatives with one objective evaluation. Implicit reparameterization
+also uses one objective evaluation and carries weight derivatives through the
+sample; its additional requirements are conditional CDFs, their derivatives,
+and a Jacobian solve.
+
+\begin{table}[htbp]
+ \centering
+ \caption{Requirements per update. Stratification uses one sample per component;
+ the other methods use one mixture sample.}
+ \label{tab:estimators}
+ \small
+ \begin{tabular}{@{}lcl@{}}
+  \toprule
+  Estimator & Objective evaluations & Required operations \\
+  \midrule
+  Score-function & $1$ & Mixture log-density derivatives \\
+  Stratified & $K$ & Component sampling derivatives \\
+  Implicit & $1$ & Conditional CDFs and a Jacobian solve \\
+  Post-stratified & $1$ & Inverse component maps and responsibilities \\
+  \bottomrule
+ \end{tabular}
+\end{table}
+
+Objective counts are particularly informative when evaluating the model is
+expensive. In that setting, the single-sample methods can spend the saved model
+evaluations on additional updates or independent samples. Density computations
+also matter: evaluating the ELBO at one point requires the full mixture
+density. For diagonal Gaussians, this entails $O(Kd)$ component-density work,
+so evaluating the ELBO once in every component entails $O(K^2d)$ such work.
+Post-stratification evaluates all component densities and inverse maps at a
+single point, while implicit reparameterization adds the standardization
+derivatives and solve described above. Vectorization and the relative cost of
+the model determine how these operation counts translate into runtime.
+
+Consequently, an empirical comparison should report both gradient variance at a
+fixed mixture and optimization progress under matched computational budgets.
+Equal objective-evaluation budgets and equal wall-clock budgets answer different
+practical questions, especially as the number of components and the event
+dimension grow. STL preserves the expected ELBO gradient and changes the
+sample-level estimator, so its effect should be evaluated separately for each
+method. ReMix will expose the sample budget and STL option through a shared
+interface, making these comparisons possible with the same model and optimizer.

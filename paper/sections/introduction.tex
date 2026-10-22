@@ -7,8 +7,10 @@ variational inference with mixtures jointly optimizes their parameters and weigh
 \citep{morningstar2021mixtures}.
 
 Sampling a mixture involves drawing a categorical index and then a continuous
-value from the chosen component. Training requires expectation gradients that
-account for parameter changes in both stages. Score-function estimators use
+value from the chosen component. Differentiating the component sample captures
+how that value changes with the component parameters. Learning mixture weights
+also requires accounting for changes in the probability of choosing each
+component. Score-function estimators use
 derivatives of the log density \citep{ranganath2014bbvi}, while pathwise estimators
 differentiate the sampled value, as in variational autoencoders
 \citep{kingma2014vae,rezende2014backprop}. Each approach has its own variance
@@ -25,10 +27,13 @@ leads to a post-stratified estimator, which averages component derivatives at a
 single mixture sample. \citet{burroni2026mixture} bring these approaches into a
 common formulation and analyze their computational and variance properties.
 
-We will implement four algorithms as the ReMix library: a score-function
-baseline, stratification, implicit reparameterization, and post-stratification.
-The library will provide a shared PyTorch interface, starting with mixtures of
-diagonal Gaussian components, and support the Sticking the Landing (STL)
+Our goal is to collect these four algorithms in ReMix, a convenient PyTorch
+library for optimizing mixture distributions and comparing gradient estimators.
+Its shared interface separates the mixture, the objective, and the estimator,
+allowing the same model and training loop to be reused across methods. A
+proof-of-concept implementation already provides this structure and a
+score-function baseline. The next steps are to add the remaining estimators for
+mixtures of diagonal Gaussian components and the Sticking the Landing (STL)
 modification for evidence lower bound gradients \citep{roeder2017stl}.
-This report specifies the estimators and their implementation requirements as a
-basis for comparing gradient variance, optimization progress, and runtime.
+This report develops the estimators through a common example and explains the
+tradeoffs that the library will make accessible through this interface.

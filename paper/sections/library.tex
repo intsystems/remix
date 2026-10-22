@@ -1,33 +1,86 @@
-\section{Planned Library}
-ReMix will expose the four estimators through an interface accepting a mixture
-and an objective. Diagonal Gaussian components will have trainable logits, means,
-and positive scales. Each estimator will return an objective estimate for logging
-and a scalar surrogate for automatic differentiation, with optional STL for
-the ELBO.
+\section{The ReMix Library}
+ReMix organizes mixture optimization around three objects: a distribution, an
+objective, and a gradient estimator. The proof of concept in the repository's
+\texttt{PoC} branch already implements this separation. Its \texttt{Mixture}
+object accepts mixture logits and compatible PyTorch distribution objects and
+provides sampling, log densities, and responsibilities. Component families can
+be combined when they have the same event shape and base measure. The included
+examples use Gaussian, Laplace, and mixed Gaussian--Laplace components,
+illustrating how the same interface can accommodate different choices of
+distribution.
 
-Table~\ref{tab:estimators} summarizes the requirements. Each mixture density
-evaluation includes all $K$ components; stratification repeats this work at every
-sample point. Shared operations will use log-sum-exp for mixture log densities,
-normalized component log densities for responsibilities, and triangular solves
-for implicit derivatives.
+The user supplies the model through a callable that evaluates
+$\log p(x,z)$. An \texttt{ELBOObjective} combines this value with the mixture
+log density, while a \texttt{GradientEstimator} constructs the update. Calling
+\texttt{estimate(q, objective)} returns an \texttt{EstimateResult} containing a
+detached \texttt{value} for logging and a scalar \texttt{surrogate\_loss} for
+training. The latter is the negative ascent surrogate from the algorithms
+above, so the usual PyTorch sequence of clearing gradients, calling
+\texttt{backward()}, and stepping the optimizer applies directly.
+Keeping the logged value separate from the training surrogate makes it possible
+to track the ELBO consistently across estimators whose surrogate values have
+different forms.
 
-\begin{table}[htbp]
- \centering
- \caption{Estimator requirements. Stratification uses one sample per component.}
- \label{tab:estimators}
- \small
- \begin{tabular}{@{}lcl@{}}
-  \toprule
-  Estimator & Objective evaluations & Required operations \\
-  \midrule
-  Score-function & $1$ & Mixture log-density derivatives \\
-  Stratified & $K$ & Component sampling derivatives \\
-  Implicit & $1$ & Conditional CDFs and a Jacobian solve \\
-  Post-stratified & $1$ & Inverse component maps and responsibilities \\
-  \bottomrule
- \end{tabular}
-\end{table}
+To illustrate the current interface, consider fitting the weight of a
+two-Gaussian mixture while keeping its component means and scales fixed.
+Listing~\ref{lst:remix-setup} creates the components and a target mixture with
+weights $0.2$ and $0.8$. Passing the target's log density to
+\texttt{ELBOObjective} gives the integrand
+$\log p(z)-\log q_\theta(z)$, whose expectation is
+$-\mathrm{KL}(q_\theta\Vert p)$. Maximizing it therefore fits the variational
+mixture to the target. In a posterior-inference application, the same callable
+would evaluate the model's joint log density for fixed observations.
 
-We will compare gradient variance, ELBO progress, runtime, and memory use across
-component counts, overlap levels, and event dimensions. Progress per model
-evaluation and per unit of time will measure practical optimization efficiency.
+\begin{lstlisting}[style=remixpython,caption={Setting up a mixture-fitting objective with the current PoC API.},label={lst:remix-setup}]
+import torch
+from torch.distributions import Normal
+
+from remix import ELBOObjective, Mixture, ScoreFunction
+
+components = [Normal(-2.0, 1.0), Normal(2.0, 1.0)]
+target = Mixture(torch.tensor([0.2, 0.8]).log(), components)
+logits = torch.nn.Parameter(torch.zeros(2))
+
+objective = ELBOObjective(target.log_prob)
+estimator = ScoreFunction(n_samples=512, baseline=0.0)
+optimizer = torch.optim.Adam([logits], lr=0.05)
+\end{lstlisting}
+
+The optimization loop in Listing~\ref{lst:remix-training} rebuilds the mixture
+from its current logits at each step, obtains the surrogate loss, and uses an
+ordinary PyTorch optimizer update. The detached value reports the estimated
+ELBO before that update. The final softmax converts the learned logits into
+mixture probabilities. This example uses the implemented score-function
+estimator; its sample count and baseline are configured independently of the
+model and optimization loop.
+
+\begin{lstlisting}[style=remixpython,caption={Optimizing the mixture weights and logging the objective.},label={lst:remix-training}]
+for step in range(300):
+    optimizer.zero_grad()
+    q = Mixture(logits, components)
+    result = estimator.estimate(q, objective)
+    result.surrogate_loss.backward()
+    optimizer.step()
+
+    if step % 50 == 0:
+        print(step, result.value.item())
+
+print(logits.detach().softmax(dim=-1))
+\end{lstlisting}
+
+This structure makes replacing an estimator a local choice in a training
+script: the mixture parameters, model callable, optimizer, and logging code
+can be retained. The proof of concept currently provides score-function
+estimation with a fixed baseline and a configurable sample count. The planned
+extensions will add stratified, implicit, and post-stratified estimators,
+initially for diagonal Gaussian components, together with optional STL for the
+ELBO. Each estimator will use the distribution operations it needs, such as
+component sampling maps, inverse maps, or conditional CDFs. Shared density and
+responsibility calculations will use log-sum-exp and normalized component log
+densities, while implicit derivatives will use triangular solves.
+
+The resulting library will support comparisons of gradient variance, ELBO
+progress, runtime, and memory use across component counts, overlap levels, and
+event dimensions. Its practical purpose is to let users carry the mathematical
+choices described in this report into an ordinary optimization loop and compare
+them under the computational budgets discussed in Section~\ref{sec:comparison}.
