@@ -1,0 +1,3 @@
+# `remix.objectives`
+
+::: remix.objectives
