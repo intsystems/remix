@@ -12,6 +12,9 @@
 % hyphenation data for this US-English article.
 \makeatletter
 \@ifundefined{l@ngerman}{\newlanguage\l@ngerman}{}
+\@ifundefined{DeclareUnicodeCharacter}{%
+  \newcommand{\DeclareUnicodeCharacter}[2]{}%
+}{}
 \def\input@path{{style/}}
 \makeatother
 \newif\ifdgruyterstyle
