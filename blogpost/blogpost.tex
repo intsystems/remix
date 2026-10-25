@@ -1,140 +1,100 @@
 \documentclass[11pt, a4paper]{article}
 \usepackage[a4paper, margin=2.5cm]{geometry}
-
-
-\usepackage[T1]{fontenc}
-\usepackage[utf8]{inputenc}
-\usepackage[english]{babel}
-\usepackage{helvet} 
-\renewcommand{\familydefault}{\sfdefault} 
-
-\usepackage{amsmath, amssymb, amsfonts}
+\usepackage{fontspec}
+\usepackage[english, bidi=basic, provide=*]{babel}
+\babelfont{rm}{Noto Sans}
+\usepackage{amsmath}
 \usepackage{booktabs}
-\usepackage{graphicx}
 \usepackage{xcolor}
-\usepackage{hyperref}
-\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{graphicx}
 
+\definecolor{primaryblue}{RGB}{37, 99, 235}
+\definecolor{darkgray}{RGB}{31, 41, 55}
+\definecolor{codebg}{RGB}{15, 23, 42}
 
-\usepackage{setspace}
-\setstretch{1.15} 
-\setlength{\parindent}{0pt} 
-\setlength{\parskip}{0.6\baselineskip} 
-\sloppy 
-\makeatletter
-\renewenvironment{abstract}{%
-    \small
-    \begin{center}%
-        {\bfseries \abstractname\vspace{-.5em}\vspace{\z@}}%
-    \end{center}%
-}{%
-    \par%
+\lstset{
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\small\color{white},
+    breaklines=true,
+    frame=single,
+    framerule=0pt,
+    xleftmargin=0pt,
+    aboveskip=10pt,
+    belowskip=10pt
 }
-\makeatother
-% ------
-
-\definecolor{primary}{RGB}{31, 78, 121}
-\definecolor{accent}{RGB}{41, 128, 185}
-\definecolor{lightbg}{RGB}{245, 247, 250}
-
-\hypersetup{
-    colorlinks=true,
-    linkcolor=primary,
-    urlcolor=accent,
-    citecolor=accent
-}
-
-\title{\textbf{ReMix: Reparameterization for Mixtures}\\ \large A Blog Post on Gradient Estimation for Mixture Distributions}
-\author{Alexander Udeneev, Alexey Ponomarev, Lina Gorbunova, Maxim Ivanov \\ \small IAS, MIPT}
-\date{October 2026}
 
 \begin{document}
 
+\title{\textbf{Why is Optimizing Mixture Distributions in PyTorch Still Such a Pain?}}
+\author{Alexander Udeneev, Alexey Ponomarev, Lina Gorbunova, Maxim Ivanov \\  MIPT}
+\date{October 2026}
+
 \maketitle
 
-\begin{abstract}
-Finite mixtures are essential probabilistic tools capable of representing complex multimodality and heterogeneous uncertainties. However, variational inference with mixtures requires differentiating expectations with respect to both component parameters and mixture weights, where standard score-function estimators suffer from high variance and naive pathwise differentiation fails. In this blog post, we introduce \textbf{ReMix}, a modern Python framework built on PyTorch that unifies unbiased gradient estimators for mixture distributions, starting from our core prototype implementing the Score-Function with Sticking the Landing (STL) modification.
-\end{abstract}
+\section*{1. The Deep Learning Dilemma with Multi-Modal Data}
+Picture this: you are training a state-of-the-art variational autoencoder or normalizing flow, and your data refuses to fit a nice, cozy unimodal Gaussian. Real-world uncertainty is messy, multimodal, and full of surprises. Naturally, you reach for \textbf{mixture distributions}.
 
-\section{Introduction and Motivation}
+Sampling from a mixture is straightforward—first draw a categorical component index, then sample from that specific component. But the moment you try to compute gradients via \texttt{loss.backward()}, PyTorch throws its hands up. Standard pathwise reparameterization fails because of the discrete component switch, and score-function estimators suffer from notoriously wild variance.
 
-Mixture distributions take the form:
-\begin{equation}
-q_{\theta}(z) = \sum_{k=1}^{K} \pi_k(\theta) q_{k,\theta}(z), \quad \pi_k > 0, \quad \sum_{k=1}^{K} \pi_k = 1,
-\end{equation}
-where \(\theta \in \mathbb{R}^{m}\) parameterizes the density on \(\mathbb{R}^{d}\). While sampling from a mixture is straightforward-first drawing a categorical component index and then sampling from that specific component-differentiating through this sampling process is notoriously tricky. Differentiating only the selected component ignores the vital contribution from changes in the selection probabilities (\(\pi_k\)).
+\begin{quote}
+\textbf{The Developer Pain:} Every time researchers need mixture gradients for custom objectives or ELBO optimization, they end up rewriting custom reparameterization tricks from scratch. We built \textbf{ReMix} to solve this once and for all with a clean, modular Python library.
+\end{quote}
 
-In our project \textbf{ReMix}, we address this gap by designing a clean, extensible library architecture for mixture gradient estimation. Our goal is to support multiple unbiased estimators (score-function, stratified, implicit reparameterization, and post-stratified) under a single consistent PyTorch interface.
+\section*{2. The ReMix API Architecture}
+ReMix bridges the gap between complex probabilistic formulations and standard PyTorch modules. You define your mixture components, pass them into a unified estimator interface, and let the library handle the underlying math seamlessly.
 
-\section{Planned Structure of the Post and Library}
+\begin{lstlisting}[style=remixpython,caption={Setting up a mixture-fitting objective with the current PoC API.},label={lst:remix-setup}]
+import torch
+from torch.distributions import Normal
 
-To provide a comprehensive overview of our work, our documentation and blog series follow this planned structure:
+from remix import ELBOObjective, Mixture, ScoreFunction
+
+components = [Normal(-2.0, 1.0), Normal(2.0, 1.0)]
+target = Mixture(torch.tensor([0.2, 0.8]).log(), components)
+logits = torch.nn.Parameter(torch.zeros(2))
+
+objective = ELBOObjective(target.log_prob)
+estimator = ScoreFunction(n_samples=512, baseline=0.0)
+optimizer = torch.optim.Adam([logits], lr=0.05)
+\end{lstlisting}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.95\textwidth]{remix_workflow.png} 
+    \caption{Under the hood of the ReMix API. The \texttt{Mixture} handles sampling and log-density evaluation. The \texttt{GradientEstimator} detaches the sample \(z_0\), evaluates the objective, and constructs the \texttt{surrogate\_loss} using the Score-Function STL formula. The \texttt{EstimateResult} keeps the detached ELBO value for logging and the surrogate loss for standard PyTorch backpropagation.}
+    \label{fig:remix_workflow}
+\end{figure}
+
+\newpage
+
+\section*{3. Inside the Engine: Score-Function with Sticking the Landing}
+To make gradient updates stable, ReMix implements advanced variance reduction techniques. The Score-Function estimator with the \textbf{Sticking the Landing (STL)} modification is expressed as:
+\[
+g_{\text{STL}} = (f_{\theta}(Z) - b) \times \nabla_{\theta} \log q_{\theta}(Z)
+\]
+\emph{Idea:} By detaching the objective evaluation $f_{\theta}(Z)$ in the computational graph while retaining the score term, we eliminate unnecessary variance spikes while keeping unbiased updates.
+
+\noindent\textbf{Other Estimators:} While our core prototype focuses on the Score-Function with STL, ReMix also supports Stratified estimators, Implicit Reparameterization (IR), and Post-Stratified estimators. You can explore the implementation details, mathematical derivations, and benchmarks for all alternative methods directly in our repository:  \\\
+\texttt{https://github.com/intsystems/re-mix}.
+
+\section*{4. Benchmarks and Empirical Results}
+We evaluated ReMix on optimization tasks starting from flat priors $(0.5, 0.5)$ toward target weights $(0.2, 0.8)$ across 300 iterations:
+
 \begin{itemize}
-    \item \textbf{Section 1: Abstract \& Motivation} - Introduction to mixture distributions and the gradient estimation problem in variational inference.
-    \item \textbf{Section 2: The ReMix Interface Architecture} - How users define mixtures, objectives, and estimators in PyTorch.
-    \item \textbf{Section 3: Score-Function Baseline and STL} - Mathematical foundations and autograd construction of the Score-Function with Sticking the Landing.
-    \item \textbf{Section 4: Advanced Estimators (Stratified, IR, and Post-Stratified)} - Overview of low-variance pathwise alternatives.
-    \item \textbf{Section 5: Reproducible Benchmark \& Results} - Experimental evaluation on Gaussian and Laplace mixture fitting.
+    \item \textbf{Gaussian Mixture:} KL divergence decreased from $0.2001 \rightarrow 0.0000$. Learned weights: $[0.193, 0.807]$.
+    \item \textbf{Laplace Mixture:} KL divergence decreased from $0.1624 \rightarrow 0.0003$. Learned weights: $[0.188, 0.812]$.
+    \item \textbf{Mixed Family:} KL divergence decreased from $0.1755 \rightarrow 0.0001$. Learned weights: $[0.192, 0.808]$.
 \end{itemize}
 
-\section{Planned Visualizations and Figures}
+\section*{5. Get Started with ReMix Today}
+Whether you are tackling uncertainty estimation or complex generative modeling, ReMix brings order to mixture distributions. Check out our open-source repository and join the discussion on making probabilistic deep learning smoother!
 
-\begin{figure}[h!]
-    \centering
-    \fbox{\parbox{0.9\textwidth}{
-        \textbf{Figure 1 (Main Visual / Architecture Schema):} \\
-        A schematic flow diagram illustrating the software architecture: 
-        \texttt{Mixture (sample, log\_prob)} \(\rightarrow\) \texttt{ScoreFunction.estimate(q, objective)} \(\rightarrow\) \texttt{EstimateResult (value, surrogate\_loss)} \(\rightarrow\) \texttt{backward()} via \texttt{torch.optim.Adam}.
-    }}
-    \caption{Core workflow architecture of the ReMix prototype.}
-\end{figure}
-
-\begin{figure}[h!]
-    \centering
-    \fbox{\parbox{0.9\textwidth}{
-        \textbf{Figure 2 (Benchmark Performance Plot):} \\
-        A comparative scatter/line plot showing KL divergence decay over 300 optimization iterations across Normal mixtures, Laplace mixtures, and mixed component families.
-    }}
-    \caption{Optimization convergence across different mixture families.}
-\end{figure}
-
-\section{Score-Function Estimator with Sticking the Landing (STL)}
-
-For the evidence lower bound (ELBO), we have \(f_{\theta}(z) = \log p(x,z) - \log q_{\theta}(z)\). Then \(d_{\theta}(z) = \partial_{\theta} f_{\theta}(z) = -s_{\theta}(z)\) and \(\mathbb{E}_{q_{\theta}}[s_{\theta}(Z)] = 0\). Hence the score-function gradient baseline with the Roeder et al. Sticking the Landing (STL) modification is given by:
-\begin{equation}
-\hat{g}_{SF,STL}(Z) = (f_{\theta}(Z) - b) s_{\theta}(Z),
-\end{equation}
-where \(s_{\theta}(z) = \partial_{\theta} \log q_{\theta}(z)\) is the score, and \(b\) is a baseline independent of \(Z\). For a general parameter-dependent objective \(f_{\theta}\), the term \(d_{\theta}(Z)\) must be retained; deleting it is specific to the ELBO. For softmax logits \(\alpha_k\) where \(\pi_k = \frac{e^{\alpha_k}}{\sum_j e^{\alpha_j}}\), the derivative with respect to the logits simplifies cleanly using responsibilities \(r_j(Z)\):
-\begin{equation}
-\hat{g}_{\alpha_j, SF, STL} = (f_{\theta}(Z) - b) (r_j(Z) - \pi_j).
-\end{equation}
-
-In our PyTorch implementation, this is elegantly constructed using detached evaluations and surrogate losses:
-\begin{verbatim}
-z = q.sample(torch.Size([self.n_samples])).detach()
-log_q = q.log_prob(z)
-values = objective.evaluate(q, z)
-surrogate = (values.detach() - self.baseline) * log_q
-return EstimateResult(values.detach().mean(), surrogate.mean())
-\end{verbatim}
-
-\section{Benchmark and Empirical Results}
-
-We evaluated our prototype on three distinct scenarios starting from initial weights \((0.5, 0.5)\) toward target weights \((0.2, 0.8)\) using the Adam optimizer (\(lr = 0.05\), \(300\) iterations, \(512\) samples per iteration):
+\section*{References}
 \begin{enumerate}
-    \item \textbf{Gaussian Mixture}: \(\mathcal{N}(-2, 1)\) and \(\mathcal{N}(2, 1)\). Estimated KL decreased from \(0.2001 \rightarrow 0.0000\). Learned weights: \([0.193, 0.807]\).
-    \item \textbf{Laplace Mixture}: \(\text{Laplace}(-2, 1)\) and \(\text{Laplace}(2, 1)\). Estimated KL decreased from \(0.1624 \rightarrow 0.0003\). Learned weights: \([0.188, 0.812]\).
-    \item \textbf{Mixed Family}: \(\mathcal{N}(-2, 1)\) and \(\text{Laplace}(2, 1)\). Estimated KL decreased from \(0.1755 \rightarrow 0.0001\). Learned weights: \([0.192, 0.808]\).
+    \item J. Burroni and D. Sheldon. Gradient estimation for mixture variational inference. \emph{Journal of Machine Learning Research}, 27(191):1-34, 2026.
+    \item G. Roeder, Y. Wu, and D. K. Duvenaud. Sticking the landing: Simple, lower-variance gradient estimators for variational inference. \emph{NeurIPS}, 2017.
+    \item S. Mohamed et al. Monte Carlo gradient estimation in machine learning. \emph{JMLR}, 21(132):1-62, 2020.
 \end{enumerate}
-
-\section{Conclusion and Future Work}
-
-We have successfully built a working prototype of \textbf{ReMix}, combining arbitrary mixture component distributions, ELBO objectives, and standard PyTorch optimization loops. In subsequent phases of the project, we will integrate stratified, implicit reparameterization, and post-stratified estimators into this shared interface.
-
-\begin{thebibliography}{9}
-\bibitem{burroni} J. Burroni and D. Sheldon. Gradient estimation for mixture variational inference. \emph{Journal of Machine Learning Research}, 27(191):1-34, 2026.
-\bibitem{roeder} G. Roeder, Y. Wu, and D. K. Duvenaud. Sticking the landing: Simple, lower-variance gradient estimators for variational inference. \emph{NeurIPS}, 2017.
-\bibitem{mohamed} S. Mohamed et al. Monte Carlo gradient estimation in machine learning. \emph{JMLR}, 21(132):1-62, 2020.
-\end{thebibliography}
 
 \end{document}
