@@ -1,7 +1,7 @@
 \documentclass[11pt, a4paper]{article}
 \usepackage[a4paper, margin=2.5cm]{geometry}
 \usepackage{fontspec}
-\usepackage[english, bidi=basic, provide=*]{babel}
+\usepackage[english, bidi=default, provide=*]{babel}
 \babelfont{rm}{Noto Sans}
 \usepackage{amsmath}
 \usepackage{booktabs}
@@ -76,7 +76,7 @@ g_{\text{STL}} = (f_{\theta}(Z) - b) \times \nabla_{\theta} \log q_{\theta}(Z)
 \emph{Idea:} By detaching the objective evaluation $f_{\theta}(Z)$ in the computational graph while retaining the score term, we eliminate unnecessary variance spikes while keeping unbiased updates.
 
 \noindent\textbf{Other Estimators:} While our core prototype focuses on the Score-Function with STL, ReMix also supports Stratified estimators, Implicit Reparameterization (IR), and Post-Stratified estimators. You can explore the implementation details, mathematical derivations, and benchmarks for all alternative methods directly in our repository:  \\\
-\texttt{https://github.com/intsystems/re-mix}.
+\texttt{https://github.com/intsystems/remix}.
 
 \section*{4. Benchmarks and Empirical Results}
 We evaluated ReMix on optimization tasks starting from flat priors $(0.5, 0.5)$ toward target weights $(0.2, 0.8)$ across 300 iterations:
