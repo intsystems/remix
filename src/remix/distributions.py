@@ -4,7 +4,58 @@ from collections.abc import Sequence
 
 import torch
 from torch import Tensor
-from torch.distributions import Categorical, Distribution
+from torch.distributions import Categorical, Distribution, Independent, MixtureSameFamily
+
+# Different parameterisations of the same distribution: a constructor accepts
+# only one of them, so ``detach_distribution`` keeps the first one it finds.
+_EXCLUSIVE_PARAM_GROUPS = (
+    ("logits", "probs"),
+    ("scale_tril", "covariance_matrix", "precision_matrix"),
+)
+
+
+def detach_distribution(dist: Distribution) -> Distribution:
+    """Rebuild ``dist`` with all parameters cut from the autograd graph.
+
+    The result has the same density, but no gradient flows into its parameters.
+    A sample ``z`` passed to its ``log_prob`` keeps its own gradient, which is
+    what the Sticking-the-Landing trick needs.
+
+    Supports ``Independent``, ``MixtureSameFamily``, any distribution that
+    defines its own ``detach()`` and every distribution built from the tensors
+    listed in ``arg_constraints`` (``Normal``, ``StudentT``, ``Laplace``,
+    ``MultivariateNormal``, ``Categorical``, ...).
+    """
+    if hasattr(dist, "detach") and callable(dist.detach):
+        return dist.detach()
+
+    validate_args = dist._validate_args
+
+    if isinstance(dist, Independent):
+        return Independent(
+            detach_distribution(dist.base_dist),
+            dist.reinterpreted_batch_ndims,
+            validate_args=validate_args,
+        )
+    if isinstance(dist, MixtureSameFamily):
+        return MixtureSameFamily(
+            detach_distribution(dist.mixture_distribution),
+            detach_distribution(dist.component_distribution),
+            validate_args=validate_args,
+        )
+
+    names = [name for name in getattr(dist, "arg_constraints", {}) if name in dist.__dict__]
+    for group in _EXCLUSIVE_PARAM_GROUPS:
+        present = [name for name in group if name in names]
+        for redundant in present[1:]:
+            names.remove(redundant)
+    if not names:
+        raise NotImplementedError(
+            f"Cannot detach {type(dist).__name__}: wrap it or give it a detach() method."
+        )
+
+    params = {name: getattr(dist, name).detach() for name in names}
+    return type(dist)(**params, validate_args=validate_args)
 
 
 class Mixture:
@@ -94,3 +145,14 @@ class Mixture:
             one over the last dimension.
         """
         return self._log_joint(z).softmax(dim=-1)
+
+    def detach(self) -> "Mixture":
+        """Return a copy with the same density whose parameters carry no gradient.
+
+        Gradients still flow through the argument ``z`` of ``log_prob``, but not
+        into the weights and component parameters (the "stop gradient" of STL).
+        """
+        return Mixture(
+            self.logits.detach(),
+            [detach_distribution(c) for c in self.components],
+        )
