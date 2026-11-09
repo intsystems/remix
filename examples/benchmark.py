@@ -7,12 +7,31 @@ from remix import ELBOObjective, Mixture
 from remix.estimators import ScoreFunction
 
 
-def fit(name, components):
+def make_target(components):
+    return Mixture(torch.tensor([0.2, 0.8]).log(), components)
+
+
+def gradient_std(components, parameter, stl, n_samples=512, repeats=200):
+    """Mean per-coordinate std of the gradient estimate at a fixed parameter."""
+    target = make_target(components)
+    objective = ELBOObjective(target.log_prob, stl=stl)
+    estimator = ScoreFunction(n_samples=n_samples)
+    parameter = parameter.clone().requires_grad_()
+
+    grads = []
+    for _ in range(repeats):
+        result = estimator.estimate(Mixture(parameter, components), objective)
+        (grad,) = torch.autograd.grad(result.surrogate_loss, parameter)
+        grads.append(grad)
+    return torch.stack(grads).std(dim=0).mean().item()
+
+
+def fit(name, components, stl=False):
     torch.manual_seed(42)
     parameter = torch.nn.Parameter(torch.zeros(len(components)))
-    target = Mixture(torch.tensor([0.2, 0.8]).log(), components)
+    target = make_target(components)
     optimizer = torch.optim.Adam([parameter], lr=0.05)
-    objective = ELBOObjective(target.log_prob)
+    objective = ELBOObjective(target.log_prob, stl=stl)
     estimator = ScoreFunction(n_samples=512)
     def measure_kl():
         with torch.no_grad():
@@ -27,12 +46,16 @@ def fit(name, components):
         result.surrogate_loss.backward()
         optimizer.step()
     final = measure_kl()
-    print(f"{name}: estimated KL {initial:.4f} -> {final:.4f}")
+    std = gradient_std(components, parameter.detach(), stl)
+    label = f"{name} ({'STL' if stl else 'plain'})"
+    print(f"{label}: estimated KL {initial:.4f} -> {final:.4f}")
     print(f"Learned weights: {parameter.detach().softmax(-1).tolist()}")
-    return initial, final
+    print(f"Gradient std at the learned weights: {std:.4f}")
+    return initial, final, std
 
 
 if __name__ == "__main__":
-    fit("Normal mixture", [Normal(-2.0, 1.0), Normal(2.0, 1.0)])
-    fit("Laplace mixture", [Laplace(-2.0, 1.0), Laplace(2.0, 1.0)])
-    fit("Normal + Laplace mixture", [Normal(-2.0, 1.0), Laplace(2.0, 1.0)])
+    for stl in (False, True):
+        fit("Normal mixture", [Normal(-2.0, 1.0), Normal(2.0, 1.0)], stl)
+        fit("Laplace mixture", [Laplace(-2.0, 1.0), Laplace(2.0, 1.0)], stl)
+        fit("Normal + Laplace mixture", [Normal(-2.0, 1.0), Laplace(2.0, 1.0)], stl)
