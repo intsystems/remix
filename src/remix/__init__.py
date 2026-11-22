@@ -2,7 +2,7 @@
 
 from .distributions import Mixture
 from .objectives import ELBOObjective
-from .estimators import EstimateResult, GradientEstimator, ScoreFunction
+from .estimators import EstimateResult, GradientEstimator, ScoreFunction, Stratified
 
 __version__ = "1.0.0"
-__all__ = ["Mixture", "ELBOObjective", "EstimateResult", "GradientEstimator", "ScoreFunction"]
+__all__ = ["Mixture", "ELBOObjective", "EstimateResult", "GradientEstimator", "ScoreFunction", "Stratified"]

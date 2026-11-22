@@ -104,3 +104,41 @@ class ScoreFunction(GradientEstimator):
         
         surrogate = (values.detach() - self.baseline) * log_q + values
         return EstimateResult(values.detach().mean(), -surrogate.mean())
+
+
+class Stratified(GradientEstimator):
+    """Pathwise gradient estimator with a fixed sample count per component.
+
+    Draws independent reparameterized samples from each component and weights
+    the component means by the mixture probabilities. With one sample per
+    component this is Estimator 1 of Burroni and Sheldon (2026). Setting
+    `stl=True` on the objective gives their Sticking-the-Landing variant.
+
+    Args:
+        n_samples: Number of samples per component per `estimate` call.
+    """
+
+    def estimate(self, q: Mixture, objective: ELBOObjective) -> EstimateResult:
+        """Estimate the objective by stratifying over the mixture components.
+
+        Args:
+            q: Variational mixture whose parameters receive gradients.
+            objective: Objective to maximize.
+
+        Returns:
+            The objective estimate and its negative as the surrogate loss.
+
+        Raises:
+            TypeError: If `q` is not a `Mixture` or a component cannot be
+                reparameterized.
+        """
+        if not isinstance(q, Mixture):
+            raise TypeError("q must be a Mixture.")
+        if any(not component.has_rsample for component in q.components):
+            raise TypeError("Stratified requires all components to support rsample.")
+
+        sample_shape = torch.Size([self.n_samples])
+        z = torch.cat([component.rsample(sample_shape) for component in q.components])
+        values = objective.evaluate(q, z).reshape(len(q.components), self.n_samples)
+        estimate = (q.mixing.probs * values.mean(dim=1)).sum()
+        return EstimateResult(estimate.detach(), -estimate)

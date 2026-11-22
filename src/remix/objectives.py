@@ -19,6 +19,16 @@ class ELBOObjective:
     still produces the pathwise gradient, and gradients w.r.t. parameters
     of ``log_joint`` are unaffected. Estimators remain unbiased; the
     variance goes to zero as ``q`` approaches the true posterior.
+
+    With ``stl=True`` the Sticking-the-Landing trick of Roeder et al. (2017)
+    is applied: ``log q(z)`` is evaluated with the parameters of ``q``
+    detached ("stop gradient"). The values of the integrand are unchanged, but
+    its explicit dependence on the parameters of ``q`` (a score term with zero
+    mean) disappears from the gradient. The gradient that flows through the
+    sample ``z`` itself is kept, so a reparameterised ``z`` still produces the
+    pathwise gradient, and gradients w.r.t. parameters of ``log_joint`` are
+    unaffected. Estimators remain unbiased; the variance goes to zero as ``q``
+    approaches the true posterior.
     """
  
     def __init__(
