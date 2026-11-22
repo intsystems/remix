@@ -60,3 +60,4 @@ A runnable version is in `examples/benchmark.py`.
 | [`Mixture`](api/distributions.md) | Mixture density: sampling, `log_prob`, responsibilities. |
 | [`ELBOObjective`](api/objectives.md) | ELBO integrand `log p(z) - log q(z)`. |
 | [`ScoreFunction`](api/estimators.md) | REINFORCE gradient estimator with a constant baseline. |
+| [`Stratified`](api/estimators.md) | Pathwise gradient estimator with `n_samples` draws per reparameterizable component. |
