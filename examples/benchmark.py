@@ -1,31 +1,34 @@
 import torch
 from torch.distributions import Laplace, Normal
-
+ 
 from tqdm.auto import trange
-
+ 
 from remix import ELBOObjective, Mixture
 from remix.estimators import ScoreFunction
-
-
+ 
+ 
 def make_target(components):
     return Mixture(torch.tensor([0.2, 0.8]).log(), components)
-
-
+ 
+ 
 def gradient_std(components, parameter, stl, n_samples=512, repeats=200):
-    """Mean per-coordinate std of the gradient estimate at a fixed parameter."""
+    """Mean per-coordinate std of the gradient at a fixed parameter."""
     target = make_target(components)
     objective = ELBOObjective(target.log_prob, stl=stl)
     estimator = ScoreFunction(n_samples=n_samples)
     parameter = parameter.clone().requires_grad_()
-
+ 
     grads = []
     for _ in range(repeats):
-        result = estimator.estimate(Mixture(parameter, components), objective)
+        q = Mixture(parameter, components)
+        result = estimator.estimate(q, objective)
+        # Gradient of the surrogate loss w.r.t. the mixture logits.
         (grad,) = torch.autograd.grad(result.surrogate_loss, parameter)
         grads.append(grad)
+    # Spread over repeated estimates, averaged over the logits.
     return torch.stack(grads).std(dim=0).mean().item()
-
-
+ 
+ 
 def fit(name, components, stl=False):
     torch.manual_seed(42)
     parameter = torch.nn.Parameter(torch.zeros(len(components)))
@@ -38,7 +41,7 @@ def fit(name, components, stl=False):
             q = Mixture(parameter, components)
             z = q.sample(torch.Size([10000]))
             return (q.log_prob(z) - target.log_prob(z)).mean().item()
-
+ 
     initial = measure_kl()
     for _ in trange(300):
         optimizer.zero_grad()
@@ -46,16 +49,23 @@ def fit(name, components, stl=False):
         result.surrogate_loss.backward()
         optimizer.step()
     final = measure_kl()
+    # Noise of the estimator at the weights found by the optimisation.
     std = gradient_std(components, parameter.detach(), stl)
     label = f"{name} ({'STL' if stl else 'plain'})"
     print(f"{label}: estimated KL {initial:.4f} -> {final:.4f}")
     print(f"Learned weights: {parameter.detach().softmax(-1).tolist()}")
     print(f"Gradient std at the learned weights: {std:.4f}")
     return initial, final, std
-
-
+ 
+ 
 if __name__ == "__main__":
+    # Compare the plain estimator (stl=False) with the STL one (stl=True).
     for stl in (False, True):
         fit("Normal mixture", [Normal(-2.0, 1.0), Normal(2.0, 1.0)], stl)
         fit("Laplace mixture", [Laplace(-2.0, 1.0), Laplace(2.0, 1.0)], stl)
-        fit("Normal + Laplace mixture", [Normal(-2.0, 1.0), Laplace(2.0, 1.0)], stl)
+        fit(
+            "Normal + Laplace mixture",
+            [Normal(-2.0, 1.0), Laplace(2.0, 1.0)],
+            stl,
+        )
+ 
