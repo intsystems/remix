@@ -1,0 +1,20 @@
+\begin{tikzpicture}[sequence]
+ \node[participant] (est)  at (8,0) {Estimator};
+ \node[participant] (mix)  at (37,0) {Mixture};
+ \node[participant] (comp) at (63,0) {Component $k$};
+ \node[participant] (obj)  at (90,0) {ELBOObjective};
+ \foreach \name/\x in {est/8,mix/37,comp/63,obj/90}
+   \draw[lifeline] (\name.south) -- (\x,4.2);
+ % UML alternative fragment. Only the selected sampling branch executes.
+ \draw[black!65] (0,.48) rectangle (73,3.02);
+ \draw[black!65] (0,.84) -- (5,.84) -- (6,.70) -- (6,.48);
+ \node[font=\small\sffamily\bfseries] at (2.7,.65) {alt};
+ \node[anchor=west,fill=white,inner sep=1pt] at (9,.71) {[\texttt{ScoreFunction}]};
+ \draw[call] (8,1.32) -- node[message] {sample((n,))} (37,1.32);
+ \draw[call] (8,1.82) -- node[message] {log\_prob(z)} (37,1.82);
+ \draw[dashed,black!65] (0,2.05) -- (73,2.05);
+ \node[anchor=west,fill=white,inner sep=1pt] at (9,2.27) {[\texttt{Stratified}]};
+ \draw[call] (8,2.85) -- node[message] {rsample((n,)) \textnormal{for each }$k$} (63,2.85);
+ \draw[call] (8,3.54) -- node[message] {evaluate(q, z)} (90,3.54);
+ \draw[reply] (90,4.04) -- node[message] {values} (8,4.04);
+\end{tikzpicture}

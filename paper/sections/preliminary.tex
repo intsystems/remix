@@ -1,61 +1,28 @@
 \section{Problem Setup}
-Let $\theta\in\mathbb R^m$ contain the parameters of a mixture density on
-$\mathbb R^d$. Our objective and mixture are
+Consider $K$ continuous component densities $q_k(z;\phi_k)$ on
+$\mathbb R^d$, with component parameters $\phi_k$. Let $\alpha$ be a vector
+of $K$ logits, $\pi=\operatorname{softmax}(\alpha)$ their mixture weights,
+and $\theta=(\alpha,\phi_1,\ldots,\phi_K)$. To sample a point $Z$, draw a
+component label $C$ and then draw from its density. Writing $q_k$ for
+$q_k(\,\cdot\,;\phi_k)$ gives
 \begin{equation}
- \mathcal J(\theta)=\mathbb E_{q_\theta}[f_\theta(Z)],
- \qquad q_\theta(z)=\sum_{k=1}^K\pi_k(\theta)q_{k,\theta}(z),
- \qquad \pi_k>0,\quad \sum_k\pi_k=1.
+ C\sim\operatorname{Categorical}(\pi),\qquad
+ Z\mid C=k\sim q_k,\qquad
+ q_\theta(z)=\sum_{k=1}^K\pi_k q_k(z).
+ \label{eq:mixture}
+\end{equation}
+Given the point $z$, its \emph{responsibility}
+$r_k(z)=\pi_k q_k(z)/q_\theta(z)$ is the conditional probability that $C=k$.
+When component $k$ is reparameterizable, we can generate its draw as
+$Z_k=T_k(\varepsilon_k;\phi_k)$ from noise $\varepsilon_k$ whose law is
+independent of $\theta$.
+
+Assume common fixed support and that we may differentiate under the
+expectations below. For a scalar objective $f_\theta(z)$, we seek an unbiased
+estimate of
+\begin{equation}
+ \nabla_\theta \mathcal J(\theta),\qquad
+ \mathcal J(\theta)=\mathbb E_{Z\sim q_\theta}[f_\theta(Z)]
+       =\sum_{k=1}^K\pi_k\,\mathbb E_{Z_k\sim q_k}[f_\theta(Z_k)].
  \label{eq:objective}
 \end{equation}
-We assume differentiable densities that are positive on the interior of a common,
-parameter-independent support, with integrable derivatives allowing
-differentiation under the integral. Pathwise identities additionally require
-vanishing boundary flux; variance comparisons require finite second moments.
-
-The responsibility $r_k(z)=\pi_kq_{k,\theta}(z)/q_\theta(z)$ is the conditional
-probability that component $k$ generated $z$. We write
-$a_k=\nabla_\theta\log\pi_k$ for the weight score and
-$s_\theta(z)=\partial_\theta\log q_\theta(z)$ for the mixture score.
-For the objective, $h_\theta(z)=\nabla_z f_\theta(z)$ describes its sensitivity
-to the sample, while $d_\theta(z)=\partial_\theta f_\theta(z)$ captures direct
-parameter dependence at fixed $z$.
-
-Component samples take the form $Z_k=T_{k,\theta}(\varepsilon_k)$, where
-$\varepsilon_k\sim\rho$ has a parameter-independent distribution. Stratification
-uses derivatives of these maps. Post-stratification also uses their inverses;
-for this method, we assume differentiable component bijections onto the common
-support and write $V_k(z)$ for $D_\theta T_{k,\theta}$ evaluated at
-$\varepsilon_k=T_{k,\theta}^{-1}(z)$.
-
-For a fixed model $p(x,z)$, variational inference maximizes the evidence lower
-bound (ELBO), with integrand
-\begin{equation}
- f_\theta(z)=\log p(x,z)-\log q_\theta(z),
- \qquad d_\theta(z)=-s_\theta(z).
- \label{eq:elbo}
-\end{equation}
-The score has zero expectation, so omitting $d_\theta$ preserves the expected
-ELBO gradient. This is the STL modification \citep{roeder2017stl}.
-In automatic differentiation, it freezes the parameters of $q$ inside the
-log-density term while preserving its derivative through $z$. We denote an
-operation that preserves a value and stops its derivative by
-$\operatorname{sg}$. For general objectives, the estimators retain $d_\theta$.
-
-As a running example, consider a mixture of two univariate Gaussians,
-$q_\theta(z)=\pi\mathcal N(z;\mu_1,\sigma_1^2)
-+(1-\pi)\mathcal N(z;\mu_2,\sigma_2^2)$, where
-$\pi=\operatorname{sigmoid}(\alpha)$ and $\sigma_k>0$.
-We use the objective $f(z)=-z^2/2$, which favors samples close to zero.
-Writing $m_k=-(\mu_k^2+\sigma_k^2)/2$ for its expectation in component $k$,
-we obtain
-\begin{equation}
- \mathcal J=\pi m_1+(1-\pi)m_2,\qquad
- \partial_\alpha\mathcal J=\pi(1-\pi)(m_1-m_2),\qquad
- \partial_{\mu_k}\mathcal J=-\pi_k\mu_k,
- \label{eq:running-example}
-\end{equation}
-where $\pi_1=\pi$ and $\pi_2=1-\pi$. Thus, ascent moves each mean toward zero
-and shifts weight toward the component with the larger expected objective.
-The known gradient lets us follow how each estimator recovers the same
-quantity from different random samples. Here $h(z)=-z$ and $d(z)=0$;
-the ELBO additionally has the direct density derivative described above.

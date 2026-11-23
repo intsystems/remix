@@ -1,0 +1,13 @@
+\begin{tikzpicture}[sequence]
+ \node[participant] (loop) at (9,0) {Training loop};
+ \node[participant] (est)  at (39,0) {Estimator};
+ \node[participant] (loss) at (66,0) {Loss tensor};
+ \node[participant] (opt)  at (91,0) {Optimizer};
+ \foreach \name/\x in {loop/9,est/39,loss/66,opt/91}
+   \draw[lifeline] (\name.south) -- (\x,3.08);
+ \draw[call]  (9,.73) -- node[message] {zero\_grad()} (91,.73);
+ \draw[call]  (9,1.26) -- node[message] {estimate(q, objective)} (39,1.26);
+ \draw[reply] (39,1.79) -- node[message] {EstimateResult} (9,1.79);
+ \draw[call]  (9,2.32) -- node[message] {backward()} (66,2.32);
+ \draw[call]  (9,2.85) -- node[message] {step()} (91,2.85);
+\end{tikzpicture}

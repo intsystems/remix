@@ -1,253 +1,29 @@
 \section{Gradient Estimators}
 \label{sec:methods}
-The following estimators target $\nabla_\theta\mathcal J$ under the assumptions
-above, with optional STL for the ELBO.
+Each estimator averages the direct derivative $\partial_\theta f_\theta(z)$
+at fixed sample points. They differ in how they differentiate the sampling
+distribution.
 
-Algorithms~\ref{alg:score}--\ref{alg:poststratified} return an objective estimate
-and a scalar surrogate $\mathcal S$; differentiating $\mathcal S$ gives the
-estimated ascent gradient. The first output is detached for logging. For a
-loss-minimizing optimizer, the training loss is $-\mathcal S$, corresponding to
-\texttt{surrogate\_loss} in the library interface.
-Write $\varphi_\theta(z)=f_\theta(z)$ for ordinary
-differentiation. With STL, use
-$\varphi_\theta(z)=\log p(x,z)-\log q_{\operatorname{sg}(\theta)}(z)$, retaining
-the derivative through $z$. For diagonal Gaussian components,
-$\rho=\mathcal N(0,I)$ and
-$T_{k,\theta}(\varepsilon)=\mu_k+\sigma_k\odot\varepsilon$.
-The single-sample algorithms first select a component with probabilities $\pi$,
-then draw its continuous value. Independent repetitions can be averaged to
-increase the sample budget.
+\paragraph*{Score-function.}
+At a fixed mixture draw $Z$, multiply the score $\partial_\theta\log q_\theta(Z)$
+by $f_\theta(Z)-b$. The constant baseline $b$ preserves the expected gradient
+because the score has mean zero \citep{ranganath2014bbvi}.
 
-\subsection{Score-function estimator}
-The score-function method differentiates the mixture density at a fixed sample.
-For $Z\sim q_\theta$ and a baseline $b$ independent of $Z$, it gives
-\citep{ranganath2014bbvi,mohamed2020gradients}
-\begin{equation}
- \widehat g_{\mathrm{SF}}(Z)
-   =(f_\theta(Z)-b)s_\theta(Z)+d_\theta(Z).
- \label{eq:score}
-\end{equation}
-The identity follows by differentiating under the integral. The baseline can be
-chosen to reduce variance because its contribution has zero expectation.
-The method requires a differentiable mixture log density.
+\paragraph*{Stratified.}
+Draw one $Z_k=T_k(\varepsilon_k;\phi_k)$ per component and differentiate
+$\sum_k\pi_k f_\theta(Z_k)$ at fixed independent noises. The logits enter
+through $\pi_k$ and the component parameters through $Z_k$
+\citep{morningstar2021mixtures}.
 
-Algorithm~\ref{alg:score} draws one component and its base noise, then detaches
-the resulting value. Differentiating the log density supplies the score term,
-while differentiating $\varphi_\theta(z_0)$ supplies the direct objective term.
-The baseline is detached in the score coefficient. With softmax logits
-$\alpha$ and component parameters independent of $\alpha$, the weight gradient
-is $(f_\theta(Z)-b)(r_j(Z)-\pi_j)$ for logit $\alpha_j$ with STL.
+\paragraph*{Implicit reparameterization.}
+In one dimension, fixing the mixture cumulative distribution function (CDF)
+$F_\theta(Z)$ gives the sample derivative $-\partial_\theta F_\theta(Z)/q_\theta(Z)$.
+In higher dimensions, fix successive conditional CDFs and solve the resulting
+triangular system where the conditional densities are positive~\citep{figurnov2018implicit}.
 
-In the running example, draw $c\sim\mathrm{Cat}(\pi,1-\pi)$ and
-$\varepsilon\sim\mathcal N(0,1)$, giving $z=\mu_c+\sigma_c\varepsilon$.
-The logit estimate is $(f(z)-b)(r_1(z)-\pi)$, while the estimate for mean
-$\mu_k$ is $(f(z)-b)r_k(z)(z-\mu_k)/\sigma_k^2$.
-Both use the objective value to scale a density derivative. Their expectations
-give the derivatives in Eq.~\ref{eq:running-example}, with the baseline
-controlling how objective values are centered.
-
-\begin{algorithm}[H]
- \small
- \caption{Score-function sampling and surrogate}
- \label{alg:score}
- \KwIn{Mixture $q_\theta$, component maps $T_{k,\theta}$, objective
-        $\varphi_\theta$, baseline $b$}
- \KwOut{$(\widehat{\mathcal J},\mathcal S)$: detached objective estimate for
-         logging and ascent surrogate, $\nabla_\theta\mathcal S=
-         \widehat g_{\mathrm{SF}}$}
- Draw $c\sim\mathrm{Cat}(\pi)$ and $\varepsilon\sim\rho$\;
- $z_0\leftarrow\operatorname{sg}(T_{c,\theta}(\varepsilon))$\;
- $v\leftarrow\varphi_\theta(z_0)$;\quad $\ell\leftarrow\log q_\theta(z_0)$\;
- $\mathcal S\leftarrow\operatorname{sg}(v-b)\,\ell+v$\;
- \KwRet{$(\operatorname{sg}(v),\mathcal S)$}\;
-\end{algorithm}
-
-\subsection{Stratified estimator}
-Stratification evaluates the objective within every component and combines the
-results using the mixture weights. Draw $N_k\geq1$ independent base samples for
-component $k$, with each $N_k$ fixed, and set
-$Z_{k,n}=T_{k,\theta}(\varepsilon_{k,n})$. Differentiating the weighted component
-expectations gives \citep{roeder2017stl,morningstar2021mixtures}
-\begin{equation}
- \widehat g_{\mathrm{ST}}
- =\sum_k\frac{\pi_k}{N_k}\sum_{n=1}^{N_k}
- \left[f_\theta(Z_{k,n})a_k
-       +D_\theta T_{k,\theta}(\varepsilon_{k,n})^\top h_\theta(Z_{k,n})
-       +d_\theta(Z_{k,n})\right].
- \label{eq:stratified}
-\end{equation}
-In practice, automatic differentiation of the weighted sample average constructs
-all three terms. Algorithm~\ref{alg:stratified} draws independent noise within
-every component and retains the derivative through each transformation and the
-outer mixture weights. Every sampled point is evaluated using the full mixture
-density in the ELBO.
-
-\begin{algorithm}[H]
- \small
- \caption{Stratified sampling and surrogate}
- \label{alg:stratified}
- \KwIn{Weights $\pi$, component maps $T_{k,\theta}$, objective
-        $\varphi_\theta$, fixed counts $N_k\geq1$}
- \KwOut{$(\widehat{\mathcal J},\mathcal S)$: detached objective estimate for
-         logging and ascent surrogate, $\nabla_\theta\mathcal S=
-         \widehat g_{\mathrm{ST}}$}
- $\mathcal S\leftarrow0$\;
- \For{$k=1,\ldots,K$}{
-  \For{$n=1,\ldots,N_k$}{
-   Draw independent $\varepsilon_{k,n}\sim\rho$\;
-   $z_{k,n}\leftarrow T_{k,\theta}(\varepsilon_{k,n})$\;
-   $\mathcal S\leftarrow\mathcal S+
-      (\pi_k/N_k)\varphi_\theta(z_{k,n})$\;
-  }
- }
- \KwRet{$(\operatorname{sg}(\mathcal S),\mathcal S)$}\;
-\end{algorithm}
-
-Sampling every component removes component-selection randomness and allows the
-sample budget to be allocated across components. One sample per component
-requires $K$ objective evaluations. For a chain of $T$ conditional mixtures,
-full enumeration requires $\prod_{t=1}^T K_t$ evaluations, where $K_t$ is the
-component count at layer $t$. This growth motivates single-sample methods.
-
-For the two-Gaussian example, stratification draws independent
-$z_1=\mu_1+\sigma_1\varepsilon_1$ and
-$z_2=\mu_2+\sigma_2\varepsilon_2$. With one sample per component, the logit
-estimate becomes $\pi(1-\pi)(f(z_1)-f(z_2))$, and the mean estimates are
-$-\pi z_1$ and $-(1-\pi)z_2$. Each update directly compares both components,
-using two objective evaluations. Averaging these expressions recovers the
-component expectations and mean gradients in Eq.~\ref{eq:running-example}.
-
-\subsection{Implicit reparameterization}
-Implicit reparameterization differentiates an exact mixture sample through a
-standardization $S_\theta$, a differentiable bijection mapping $Z\sim q_\theta$
-to a fixed reference distribution. Holding the standardized value constant gives
-\citep{graves2016mixture,figurnov2018implicit}
-\begin{equation}
- A_\theta(z)V_{\mathrm{IR}}(z)=-D_\theta S_\theta(z),
- \qquad A_\theta(z)=D_zS_\theta(z),
- \qquad
- \widehat g_{\mathrm{IR}}(Z)
-   =V_{\mathrm{IR}}(Z)^\top h_\theta(Z)+d_\theta(Z).
- \label{eq:implicit}
-\end{equation}
-The matrix $A_\theta$ must be nonsingular, and the inverse transformation must
-satisfy the differentiation assumptions. In one dimension, $S_\theta$ is the
-mixture cumulative distribution function (CDF), so the sample derivative is
-$-\partial_\theta F_\theta(z)/q_\theta(z)$.
-
-For a multivariate mixture, a suitable standardization is the Rosenblatt
-transform: coordinate $i$ is the conditional CDF
-$S_{\theta,i}(z)=F_\theta(z_i\mid z_{<i})$.
-Its component weights are proportional to
-$\pi_kq_{k,\theta}(z_{<i})$, accounting for the information in preceding
-coordinates. For factorized components, the prefix density is a product of
-univariate densities, and the component conditional CDF is its univariate CDF.
-The resulting Jacobian is lower triangular with positive conditional densities
-on the diagonal, enabling a triangular solve.
-
-Algorithm~\ref{alg:implicit} first draws an exact sample through the categorical
-index and component map. It then evaluates the standardization at that detached
-point and attaches its implicit derivative through a linear solve.
-The corrected value $\widetilde z$ equals $z_0$ and carries the first-order
-implicit gradient. The method requires one objective evaluation, CDF derivatives,
-and a Jacobian solve. A generic reverse-mode construction costs $O(dC_S+d^2)$,
-where $C_S$ is the cost of evaluating $S_\theta$.
-
-In the running example, let $F_k$ denote the CDF of component $k$.
-The standardization is $F_\theta(z)=\pi F_1(z)+(1-\pi)F_2(z)$, giving
-$\partial_\alpha z=-\pi(1-\pi)(F_1(z)-F_2(z))/q_\theta(z)$ and
-$\partial_{\mu_k}z=r_k(z)$. Multiplying by $h(z)=-z$ yields the objective
-gradients. The weight derivative describes how the sampled location moves
-when the mixture weight changes while its cumulative probability stays fixed.
-This uses one objective evaluation and the CDFs of both components.
-
-\begin{algorithm}[H]
- \small
- \caption{Implicit sampling and surrogate}
- \label{alg:implicit}
- \KwIn{Weights $\pi$, component maps $T_{k,\theta}$, standardization
-        $S_\theta$, objective $\varphi_\theta$}
- \KwOut{$(\widehat{\mathcal J},\mathcal S)$: detached objective estimate for
-         logging and ascent surrogate, $\nabla_\theta\mathcal S=
-         \widehat g_{\mathrm{IR}}$}
- Draw $c\sim\mathrm{Cat}(\pi)$ and $\varepsilon\sim\rho$\;
- $z_0\leftarrow\operatorname{sg}(T_{c,\theta}(\varepsilon))$\;
- $s\leftarrow S_\theta(z_0)$;\quad
- $A\leftarrow\operatorname{sg}(D_zS_\theta(z)|_{z=z_0})$\;
- Solve the triangular system $Au=-s$, retaining the derivative through $s$\;
- $\widetilde z\leftarrow z_0+u-\operatorname{sg}(u)$\;
- $v\leftarrow\varphi_\theta(\widetilde z)$;\quad $\mathcal S\leftarrow v$\;
- \KwRet{$(\operatorname{sg}(v),\mathcal S)$}\;
-\end{algorithm}
-
-\subsection{Post-stratified estimator}
-Post-stratification draws one exact mixture sample and evaluates how every
-component could have generated that value. It recovers the base noise through
-each inverse map and averages the component derivatives using responsibilities:
-\begin{equation}
- \overline V(z)=\sum_k r_k(z)V_k(z),\qquad
- \widehat g_{\mathrm{PS}}(Z)
- =\overline V(Z)^\top h_\theta(Z)
-   +f_\theta(Z)\sum_k r_k(Z)a_k+d_\theta(Z).
- \label{eq:poststratified}
-\end{equation}
-The identity
-$\mathbb E_{q_\theta}[r_k(Z)H(Z)]=\pi_k\mathbb E_{q_{k,\theta}}[H(Z)]$
-connects this expression to the stratified gradient and establishes unbiasedness
-\citep{jankowiak2019multivariate,burroni2026mixture}.
-Component parameters receive pathwise derivatives, and trainable weights receive
-the score contribution. With independent softmax logits, the latter is
-$f_\theta(Z)(r_j(Z)-\pi_j)$.
-
-Returning to the example, post-stratification draws one value $z$ and recovers
-$e_k=(z-\mu_k)/\sigma_k$ for both components. Its mean estimate is
-$-r_k(z)z$, which coincides with the implicit estimate in this univariate
-Gaussian case. Its logit estimate is $f(z)(r_1(z)-\pi)$, the same as the
-score-function estimate with zero baseline. The example separates the two
-roles of the method: responsibility-weighted sample derivatives update the
-component parameters, while a score term updates the mixture weights.
-
-Algorithm~\ref{alg:poststratified} draws one component to obtain $z_0$, then
-recovers a base-noise value for every component at that same point. For diagonal
-Gaussians, the inverse map is
-$T_{k,\theta}^{-1}(z)=(z-\mu_k)\oslash\sigma_k$.
-The recovered noises $e_k$ and responsibilities $\bar r_k$ are detached before
-reconstructing the sample. The resulting surrogate is
-\begin{equation}
- \widetilde z=\sum_k\bar r_k T_{k,\theta}(e_k),\qquad
- \mathcal S_{\mathrm{PS}}=
- f_\theta(\widetilde z)+\operatorname{sg}(f_\theta(z_0))
-                             \sum_k\bar r_k\log\pi_k.
- \label{eq:poststratified-surrogate}
-\end{equation}
-Each reconstructed component sample equals $z_0$, so $\widetilde z$ preserves
-the original value while carrying the averaged derivative. The objective value
-is reused in the detached weight correction. The choice of $\varphi_\theta$
-applies ordinary differentiation or STL to the first term.
-
-\begin{algorithm}[H]
- \small
- \caption{Post-stratified sampling and surrogate}
- \label{alg:poststratified}
- \KwIn{Mixture $q_\theta$, component maps $T_{k,\theta}$ and their inverses,
-        objective $\varphi_\theta$}
- \KwOut{$(\widehat{\mathcal J},\mathcal S)$: detached objective estimate for
-         logging and ascent surrogate, $\nabla_\theta\mathcal S=
-         \widehat g_{\mathrm{PS}}$}
- Draw $c\sim\mathrm{Cat}(\pi)$ and $\varepsilon\sim\rho$\;
- $z_0\leftarrow\operatorname{sg}(T_{c,\theta}(\varepsilon))$\;
- \For{$k=1,\ldots,K$}{
-  $e_k\leftarrow\operatorname{sg}(T_{k,\theta}^{-1}(z_0))$;\quad
-  $\bar r_k\leftarrow\operatorname{sg}(\pi_kq_{k,\theta}(z_0)/q_\theta(z_0))$\;
- }
- $\widetilde z\leftarrow\sum_k\bar r_kT_{k,\theta}(e_k)$\;
- $v\leftarrow\varphi_\theta(\widetilde z)$\;
- $\mathcal S\leftarrow v+\operatorname{sg}(v)\sum_k\bar r_k\log\pi_k$\;
- \KwRet{$(\operatorname{sg}(v),\mathcal S)$}\;
-\end{algorithm}
-
-This conditional averaging is a Rao--Blackwellization: it has a smaller or equal
-covariance than using only the sampled component's pathwise and weight-score
-terms, including with STL \citep{burroni2026mixture}. It requires one objective
-evaluation, with all component densities and inverse maps evaluated at the same
-sample.
+\paragraph*{Post-stratified.}
+At one mixture draw $Z$, invert each component map to recover the noise
+that would produce $Z$. Hold these noises fixed and average the sample
+derivatives with weights $r_k(Z)$. Logit $\alpha_j$ receives the weight-score
+term $f_\theta(Z)(r_j(Z)-\pi_j)$
+\citep{burroni2026mixture}.

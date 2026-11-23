@@ -31,7 +31,7 @@
 \usepackage{nicefrac}
 
 % Tables and figures.
-\usepackage{booktabs}
+\usepackage{booktabs,tabularx}
 \usepackage{graphicx}
 \graphicspath{{plots/}{pictures/}{images/}}
 \DeclareGraphicsExtensions{.pdf,.png,.jpg}
@@ -39,13 +39,25 @@
 \usepackage{subcaption}
 \usepackage{wrapfig}
 
-% Colour and algorithms.
+% Sequence diagrams and the Python example.
 \usepackage[dvipsnames]{xcolor}
-\usepackage[linesnumbered,ruled]{algorithm2e}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
+\tikzset{
+  sequence/.style={x=.01\linewidth,y=-1cm,font=\small\sffamily},
+  participant/.style={draw=black!70,fill=black!5,inner xsep=5pt,inner ysep=4pt},
+  lifeline/.style={densely dashed,draw=black!50},
+  call/.style={-{Triangle[length=4pt,width=4pt]}},
+  reply/.style={dashed,-{Straight Barb[length=4pt,width=4pt]}},
+  message/.style={midway,above,fill=white,inner sep=1.5pt,font=\small\ttfamily}
+}
 \usepackage{listings}
 % The bundled publisher style prefixes entries in caption lists.
 \makeatletter
 \providecommand{\plist@lstlisting}{\lstlistingname\space}
+% Keep short method descriptions in the same paragraph as their headings.
+\renewcommand{\paragraph}{\@startsection{paragraph}{4}{\z@}%
+  {1.2ex plus .3ex minus .2ex}{-.65em}{\normalfont\bfseries}}
 \makeatother
 \lstdefinestyle{remixpython}{
   language=Python,
