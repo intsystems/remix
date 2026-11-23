@@ -1,29 +1,80 @@
 \section{Gradient Estimators}
 \label{sec:methods}
-Each estimator averages the direct derivative $\partial_\theta f_\theta(z)$
-at fixed sample points. They differ in how they differentiate the sampling
-distribution.
+Consider one scalar parameter $\lambda$, either a mixture logit or a coordinate
+of a component parameter. We write $\widehat g_\lambda$ for an estimate of
+$\partial_\lambda\mathcal J$ in Eq.~\eqref{eq:objective}.
+The derivative $\partial_\lambda f_\theta(z)$ holds the sample point fixed.
+If the point moves as $\lambda$ changes, its contribution to the objective
+also depends on the slope $\nabla_z f_\theta(z)$.
 
 \paragraph*{Score-function.}
-At a fixed mixture draw $Z$, multiply the score $\partial_\theta\log q_\theta(Z)$
-by $f_\theta(Z)-b$. The constant baseline $b$ preserves the expected gradient
-because the score has mean zero \citep{ranganath2014bbvi}.
+Draw $Z\sim q_\theta$ and hold it fixed. Differentiating the density in the
+expectation gives $\partial_\lambda q_\theta(z)
+=q_\theta(z)\,\partial_\lambda\log q_\theta(z)$. The score therefore measures
+the relative change in density at the sampled point~\citep{ranganath2014bbvi}.
+With a constant baseline $b$, the estimate is
+\begin{equation}
+ \widehat g_\lambda
+ = \partial_\lambda f_\theta(Z)
+   + \bigl(f_\theta(Z)-b\bigr)\,\partial_\lambda\log q_\theta(Z).
+ \label{eq:score}
+\end{equation}
+The score has mean zero, so $b$ can center the sampled objective values
+while preserving the expected gradient.
 
 \paragraph*{Stratified.}
-Draw one $Z_k=T_k(\varepsilon_k;\phi_k)$ per component and differentiate
-$\sum_k\pi_k f_\theta(Z_k)$ at fixed independent noises. The logits enter
-through $\pi_k$ and the component parameters through $Z_k$
-\citep{morningstar2021mixtures}.
+Use the component sum in Eq.~\eqref{eq:objective} and draw one independent
+$Z_k=T_k(\varepsilon_k;\phi_k)$ per component~\citep{morningstar2021mixtures}. Write
+$v_k(e)=\partial_\lambda T_k(e;\phi_k)$ for the sample derivative at fixed
+noise $e$. Differentiating the weighted sample objective
+$\sum_k\pi_k f_\theta(Z_k)$ gives
+\begin{equation}
+ \widehat g_\lambda
+ = \sum_{k=1}^K \left[
+     f_\theta(Z_k)\,\partial_\lambda\pi_k
+     + \pi_k\bigl\{\partial_\lambda f_\theta(Z_k)
+          + \nabla_z f_\theta(Z_k)^\top v_k(\varepsilon_k)\bigr\}\right].
+ \label{eq:stratified}
+\end{equation}
+The weight term for logit $\alpha_j$ is positive when $f_\theta(Z_j)$ exceeds
+the weighted sample average. The path term uses the objective slope at
+each component's own draw.
 
 \paragraph*{Implicit reparameterization.}
-In one dimension, fixing the mixture cumulative distribution function (CDF)
-$F_\theta(Z)$ gives the sample derivative $-\partial_\theta F_\theta(Z)/q_\theta(Z)$.
-In higher dimensions, fix successive conditional CDFs and solve the resulting
-triangular system where the conditional densities are positive~\citep{figurnov2018implicit}.
+Draw $Z\sim q_\theta$. In one dimension the mixture cumulative distribution
+function (CDF) $F_\theta$ assigns it a rank $U=F_\theta(Z)$, uniform on
+$[0,1]$. As $\lambda$ varies, follow the point with that same
+rank~\citep{figurnov2018implicit}. Differentiating $F_\theta(Z)=U$ and
+applying the chain rule gives the sample velocity $v(Z)$ and the estimate
+\begin{equation}
+ v(Z)=-\frac{\partial_\lambda F_\theta(Z)}{q_\theta(Z)},\qquad
+ \widehat g_\lambda
+ = \partial_\lambda f_\theta(Z)+\nabla_z f_\theta(Z)^\top v(Z).
+ \label{eq:implicit}
+\end{equation}
+If $F_j$ denotes the CDF of component $j$, then
+$\partial_{\alpha_j}F_\theta=\pi_j(F_j-F_\theta)$ gives the numerator
+for a logit. In higher dimensions, hold fixed the conditional ranks
+$S_{\theta,i}(z)=F_\theta(z_i\mid z_1,\ldots,z_{i-1})$ for $i=1,\ldots,d$.
+Their Jacobian $D_z S_\theta$ is lower triangular. Solving
+$(D_z S_\theta)v=-\partial_\lambda S_\theta$ at $Z$ gives the velocity in
+Eq.~\eqref{eq:implicit} wherever the conditional densities are positive.
 
 \paragraph*{Post-stratified.}
-At one mixture draw $Z$, invert each component map to recover the noise
-that would produce $Z$. Hold these noises fixed and average the sample
-derivatives with weights $r_k(Z)$. Logit $\alpha_j$ receives the weight-score
-term $f_\theta(Z)(r_j(Z)-\pi_j)$
-\citep{burroni2026mixture}.
+Draw one $Z\sim q_\theta$. For a given label $C=k$, a component parameter
+enters through the sampling map $T_k$ and a logit through the probability
+$\pi_k$ of selecting $k$. Post-stratification averages these contributions
+over the possible labels of $Z$ with probabilities $r_k(Z)$~\citep{burroni2026mixture}.
+If each component map is invertible, the noise $e_k=T_k^{-1}(Z;\phi_k)$
+reconstructs the same point in component $k$. Using these noises gives
+\begin{equation}
+ \widehat g_\lambda
+ = \partial_\lambda f_\theta(Z)
+   + \sum_{k=1}^K r_k(Z)\left[
+       \nabla_z f_\theta(Z)^\top v_k(e_k)
+       + f_\theta(Z)\,\partial_\lambda\log\pi_k\right].
+ \label{eq:poststratified}
+\end{equation}
+For a univariate Gaussian component with mean $\mu_k$ and scale $\sigma_k$,
+$e_k=(Z-\mu_k)/\sigma_k$. Holding $e_k$ fixed gives a unit sample derivative
+for $\mu_k$, so its sampling contribution is $r_k(Z)\,\partial_z f_\theta(Z)$.
