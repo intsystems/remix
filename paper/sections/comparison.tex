@@ -1,89 +1,121 @@
 \clearpage
 \section{Comparing the Estimators}
 \label{sec:comparison}
-Table~\ref{tab:estimators} compares one update from each of
-Eqs.~\eqref{eq:score}--\eqref{eq:poststratified}.
-For a mixture draw $Z$, write $f=f_\theta(Z)$ and $r_j=r_j(Z)$.
-For stratified draws $Z_k$, write $f_k=f_\theta(Z_k)$ and
-$\bar f=\sum_k\pi_k f_k$. A component path differentiates the objective
-through $T_k$ at fixed noise. The logit and component rows show the
-contributions from sampling.
+Table~\ref{tab:estimators} compares Eqs.~\eqref{eq:score}--\eqref{eq:poststratified}
+for a logit $\alpha_j$ and a scalar coordinate $\eta$ of component $\phi_k$.
+At a mixture draw $Z$, write $f=f_\theta(Z)$, $h=\nabla_z f_\theta(Z)$,
+$r_k=r_k(Z)$, and $s_\lambda=\partial_\lambda\log q_\theta(Z)$ for the score
+of either parameter $\lambda$. At a component draw $Z_k$, write
+$f_k=f_\theta(Z_k)$ and $h_k=\nabla_z f_\theta(Z_k)$, with
+$\bar f=\sum_k\pi_k f_k$. Adding the direct term at fixed points to the
+sampling term for $\lambda$ gives the full gradient estimate.
+
+The component velocity $v_k(e)=\partial_\lambda T_k(e;\phi_k)$ holds its
+noise fixed. The inverse noise $e_k=T_k^{-1}(Z;\phi_k)$ reproduces $Z$.
+For the conditional ranks $S=S_\theta(Z)$ of the implicit estimator,
+solve $(D_z S_\theta(Z))^\top u=h$ once for all parameters.
+The partial derivatives of $S$ hold $Z$ fixed. In one dimension,
+$q=q_\theta(Z)$, $F=F_\theta(Z)$, and $F_k$ is the component CDF at $Z$.
+
+For the variance row, let $G=\partial_\lambda f+h^\top v_C(\varepsilon_C)
++f\,\partial_\lambda\log\pi_C$ be the estimate using the sampled label $C$
+and its noise $\varepsilon_C$. We assume finite second moments.
+
+For a fixed model $p(x,z)$ and observations $x$, the evidence lower bound
+(ELBO) uses $f_\theta(z)=\log p(x,z)-\log q_\theta(z)$. Sticking the Landing (STL)
+drops the zero-mean direct derivative while preserving the sample slope
+\citep{roeder2017stl}. At the exact posterior, $f=L=\log p(x)$ and $h=0$.
 
 \begin{table}[!htb]
- \caption{Four unbiased estimators for trainable logits and components.
- Evaluations count sampled points. When the objective uses $\log q_\theta$, density work
- counts this term for $d$-dimensional diagonal Gaussian components.}
+ \caption{One unbiased update with trainable logits and components. Value
+ and slope counts give the number of points requiring $f_\theta$ and
+ $\nabla_z f_\theta$. Work counts mixture arithmetic for $K$ diagonal Gaussians
+ in $d$ dimensions. The implicit bound uses a dense rank Jacobian.}
  \label{tab:estimators}
  \centering
  \ifdgruyterstyle\baretabulars\fi
  \sffamily\small
  \setlength{\tabcolsep}{3pt}
- \renewcommand{\arraystretch}{1.15}
+ \renewcommand{\arraystretch}{1.12}
  \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{.18\linewidth}*{4}{>{\raggedright\arraybackslash}X}@{}}
   \toprule
   \textbf{Property} & \textbf{Score-function} & \textbf{Stratified}
     & \textbf{Implicit} & \textbf{Post-stratified} \\
   \midrule
-  Objective evaluations
-    & $1$ mixture draw & $K$, one per component & $1$ mixture draw & $1$ mixture draw \\
-  Needs $\nabla_z f_\theta$
-    & No & Yes & Yes & Yes \\
-  \addlinespace
-  Logit $\alpha_j$
+  Sampled points
+    & $Z\sim q_\theta$ & $Z_k\sim q_k$, all $k$ & $Z\sim q_\theta$ & $Z\sim q_\theta$ \\
+  Objective estimate
+    & $f$ & $\bar f$ & $f$ & $f$ \\
+  Value / slope counts
+    & $1\,/\,0$ & $K\,/\,K$ & $1\,/\,1$ & $1\,/\,1$ \\
+  \midrule
+  Direct term for $\lambda$
+    & $\partial_\lambda f$ & $\sum_l\pi_l\,\partial_\lambda f_l$
+    & $\partial_\lambda f$ & $\partial_\lambda f$ \\
+  Logit sampling term $\alpha_j$
     & $(f-b)(r_j-\pi_j)$ & $\pi_j(f_j-\bar f)$
-    & Path through the mixture CDFs & $f(r_j-\pi_j)$ \\
-  Component $\phi_k$
-    & $(f-b)r_k$ $\times\,\partial_{\phi_k}\log q_k(Z)$ & $\pi_k$ times the path at $Z_k$
-    & Path through the mixture CDFs & $r_k(Z)$ times the path at $Z$ \\
-  \addlinespace
+    & $-u^\top\partial_{\alpha_j}S$\newline
+      $\displaystyle -\frac{h\pi_j(F_j-F)}{q}$ {\scriptsize $(d=1)$}
+    & $f(r_j-\pi_j)$ \\
+  \addlinespace[2pt]
+  Component sampling term $\eta$
+    & $(f-b)r_k$ $\times\,\partial_\eta\log q_k(Z)$
+    & $\pi_k h_k^\top v_k(\varepsilon_k)$
+    & $-u^\top\partial_\eta S$\newline
+      $\displaystyle -\frac{h\pi_k\,\partial_\eta F_k}{q}$ {\scriptsize $(d=1)$}
+    & $r_k h^\top v_k(e_k)$ \\
+  \addlinespace[2pt]
+  Gaussian mean $\mu_k$, $f(z)=-z^2/2$
+    & $(f-b)r_k\,\dfrac{Z-\mu_k}{\sigma_k^2}$ & $-\pi_k Z_k$
+    & $-r_k Z$ & $-r_k Z$ \\
+  \midrule
   Distribution operations
-    & Log-density derivatives & Differentiable component samplers
-    & Conditional CDF derivatives and a triangular solve
-    & Responsibilities and invertible, differentiable samplers \\
-  Density work per update
+    & Mixture score at $Z$ & Component sampler derivatives at $\varepsilon_k$
+    & Conditional CDF derivatives and triangular solve
+    & Responsibilities, inverse maps and sampler derivatives at $e_k$ \\
+  Mixture density work
     & $O(Kd)$ & $O(K^2d)$ & $O(Kd)$ & $O(Kd)$ \\
+  Total mixture work for the ELBO gradient
+    & $O(Kd)$ & $O(K^2d)$ & $O(Kd^2)$ & $O(Kd)$ \\
   \addlinespace
-  Sampling variation
-    & Objective value times a score & Noise within each component
-    & Slope and sample motion at $Z$ & Label averaged out at fixed $Z$ \\
-  Add a constant $c$ to the objective
-    & Adds $c$ times the mixture score & Same update & Same update
-    & Adds $c(r_j-\pi_j)$ for each logit $j$ \\
-  ReMix support
-    & \texttt{ScoreFunction} & \texttt{Stratified} & In development & Planned \\
+  Variance of $\widehat g_\lambda$
+    & $\operatorname{Var}[\partial_\lambda f+(f-b)s_\lambda]$
+    & $\sum_l\pi_l^2\,\operatorname{Var}(G\mid C=l)$
+    & $\operatorname{Var}[\partial_\lambda f-u^\top\partial_\lambda S]$
+    & $\operatorname{Var}(\mathbb E[G\mid Z])$\newline $\leq\operatorname{Var}(G)$ \\
+  Change for a constant shift $c$ (fixed $b$)
+    & $c\,s_\lambda$ & $0$ & $0$
+    & $c(r_j-\pi_j)$ for $\alpha_j$\newline $0$ for $\eta$ \\
+  Exact posterior with STL
+    & $(L-b)s_\lambda$ & $0$ & $0$
+    & $L(r_j-\pi_j)$ for $\alpha_j$\newline $0$ for $\eta$ \\
+  ReMix implementation
+    & \texttt{ScoreFunction}\newline Implemented & \texttt{Stratified}\newline Implemented
+    & \texttt{Implicit}\newline In development & \texttt{PostStratified}\newline Planned \\
   \bottomrule
  \end{tabularx}
 \end{table}
 
-\paragraph*{Sampling budget.}
-At a budget of $K$ objective evaluations, stratification draws once per
-component. Averaging $K$ independent one-point estimates uses the same
-budget, with probability $1-(1-\pi_k)^K$ of drawing from component $k$.
+\paragraph*{Matched sampling budgets.}
+With $K$ objective evaluations, stratification samples every component.
+Across $K$ independent mixture draws the probability of selecting component
+$k$ at least once is $1-(1-\pi_k)^K$.
 
-\paragraph*{Variance and runtime.}
-Post-stratification averages the selected component's path and weight score
-over $C$ conditional on $Z$. With finite second moments, the law of total
-variance bounds its variance in each coordinate by that of using the selected
-component alone \citep{burroni2026mixture}. Equal objective-evaluation
-budgets can yield different runtimes. The implicit estimator, for example,
-also pays for the conditional CDF derivatives and the solve.
+\paragraph*{Arithmetic cost.}
+Evaluating the diagonal Gaussian mixture density costs $O(Kd)$ per point.
+The implicit bound assumes $d$ reverse
+passes through the $O(Kd)$ rank map to form its Jacobian, followed by an
+$O(d^2)$ triangular solve~\citep{burroni2026mixture}.
+
+\paragraph*{Variance.}
+Stratification fixes the component counts, so only independent within-component
+variances enter its update. Post-stratification averages the single-label
+estimate $G$ conditional on $Z$. The law of total variance gives the bound
+in the table~\citep{burroni2026mixture}.
 
 \paragraph*{Which updates coincide?}
-Take two univariate Gaussian components $q_k=\mathcal N(\mu_k,\sigma_k^2)$
-and $f(z)=-z^2/2$. The exact gradient for mean $\mu_k$ is $-\pi_k\mu_k$.
-Stratification estimates it by $-\pi_k Z_k$. At the same mixture draw $Z$,
-implicit and post-stratified estimation both give $-r_k(Z)Z$, since the
-implicit derivative of $Z$ with respect to $\mu_k$ is $r_k(Z)$. For logits,
-post-stratification agrees with the zero-baseline score-function estimate for
-any objective, since $\partial_{\alpha_j}\log q_\theta(Z)=r_j(Z)-\pi_j$.
-
-\paragraph*{The variational objective.}
-For fixed observations $x$ and joint density $p(x,z)$, the evidence lower
-bound (ELBO) uses $f_\theta(z)=\log p(x,z)-\log q_\theta(z)$. Its direct
-derivative is the negative mixture score. Sticking the Landing (STL)
-omits this zero-mean term while preserving derivatives through $z$
-\citep{roeder2017stl}. At an exact posterior fit, $f_\theta(z)=\log p(x)$
-is constant in $z$. With STL the stratified and implicit updates then
-vanish on every draw. The score-function update scales the mixture score
-by $\log p(x)-b$, and the post-stratified logit update scales
-$r_j-\pi_j$ by $\log p(x)$.
+For two Gaussian components $q_k=\mathcal N(\mu_k,\sigma_k^2)$,
+$\partial_{\mu_k}F_k=-q_k(Z)$. This makes the implicit and post-stratified
+mean estimates identical on any given draw for $f(z)=-z^2/2$, with expectation
+$-\pi_k\mu_k$. For logits, post-stratification matches the zero-baseline
+score-function estimator for any objective.
