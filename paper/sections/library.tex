@@ -23,8 +23,8 @@ points from each of the $K$ components and weights the $K$ sample means.
 Both call \texttt{ELBOObjective.evaluate} on a batch of points. With
 \texttt{stl=True}, the objective evaluates the mixture log density with
 detached distribution parameters so gradients still flow through its input.
-The development implementation of \texttt{Implicit} uses scalar or
-factorized continuous components with differentiable CDFs.
+\texttt{Implicit} uses scalar or factorized continuous components with
+differentiable CDFs.
 
 \begin{figure}[htbp]
  \centering
