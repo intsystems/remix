@@ -12,9 +12,12 @@ derivative of a single mixture draw from its distribution function
 to post-stratification, which averages component derivatives at one sampled
 point.
 
-\paragraph*{Contributions.}
-We compare four estimators in Table~\ref{tab:estimators} by sampling budget,
-weight and component gradients, variance, and required distribution operations.
-A two-Gaussian example identifies which updates coincide on the same draw.
-We provide a common PyTorch interface and show how to exchange its
-score-function and stratified estimators at a fixed number of objective evaluations.
+\paragraph*{Contributions.}\leavevmode
+\begin{itemize}
+  \renewcommand{\labelitemi}{\textbullet}
+  \item We compare four estimators in Table~\ref{tab:estimators} by sampling budget,
+    weight and component gradients, variance, and required distribution operations.
+  \item A two-Gaussian example identifies which updates coincide on the same draw.
+  \item We provide a common PyTorch interface and show how to exchange its
+    score-function and stratified estimators at a fixed number of objective evaluations.
+\end{itemize}
