@@ -17,7 +17,8 @@ maximizing the ELBO. Components may come from different families
 
 ```
 git clone https://github.com/intsystems/remix.git
-python -m pip install ./remix/src
+cd remix
+python -m pip install .
 ```
 
 **Uninstall**
