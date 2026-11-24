@@ -2,21 +2,27 @@
 
 ## Основные классы
 
-`Tensor` в сигнатурах &mdash; тензор PyTorch. Все интерфейсы ниже планируются к реализации.
+`Tensor` в сигнатурах &mdash; тензор PyTorch. Публичный API использует
+`Mixture(logits, components)`: компоненты должны быть несмешанными
+(`batch_shape` пустой) и иметь одинаковую форму события.
 
 | Класс | Основные методы |
 |---|---|
-| `GaussianMixture(logits: Tensor, loc: Tensor, scale: Tensor)` | Хранит параметры смеси. `sample(sample_shape: torch.Size) -> Tensor` генерирует сэмплы; `log_prob(z: Tensor) -> Tensor` считает логарифм плотности; `responsibilities(z: Tensor) -> Tensor` возвращает вероятности принадлежности компонентам. |
-| `DiagonalGaussianMixture(n_components: int, event_dim: int)` | Модуль с обучаемыми параметрами. `distribution() -> GaussianMixture` создаёт распределение для текущего шага. Положительные значения получаем через `softplus`. |
-| `ELBOObjective(log_joint: Callable, stl: bool = False)` | `evaluate(q: GaussianMixture, z: Tensor) -> Tensor` вычисляет ELBO: `log_joint(z) - log_q(z)`. При STL отключает прямой градиент по параметрам плотности `q`, сохраняя градиент через `z`. |
-| `GradientEstimator(n_samples: int = 1)` | Общий интерфейс: `estimate(q: GaussianMixture, objective: ELBOObjective) -> EstimateResult`. Результат содержит `value: Tensor` для логирования и скаляр `surrogate_loss: Tensor` для обучения. |
+| `Mixture(logits: Tensor, components: Sequence[Distribution])` | `sample`, `log_prob`, `responsibilities` и `detach` для конечной смеси. Параметры компонентов задаются объектами PyTorch Distribution. |
+| `ELBOObjective(log_joint: Callable, stl: bool = False)` | `evaluate(q: Mixture, z: Tensor) -> Tensor` вычисляет `log_joint(z) - log_q(z)`. STL отключает прямой градиент через параметры плотности `q`, сохраняя градиент через `z`. |
+| `GradientEstimator(n_samples: int = 1)` | Общий интерфейс: `estimate(q: Mixture, objective: ELBOObjective) -> EstimateResult`. Результат содержит `value` для логирования и скалярный `surrogate_loss` для обучения. |
 
-Реализации GradientEstimator:
+Реализации `GradientEstimator`, доступные из публичного API:
 
 - **`ScoreFunction`** &mdash; [статья](https://arxiv.org/abs/1703.09194).
 - **`Stratified`** &mdash; [статья](https://www.jmlr.org/papers/v27/25-2560.html).
-- **`Implicit`** &mdash; [статья](https://arxiv.org/abs/1805.08498).
-- **`PostStratified`** &mdash; [статья](https://www.jmlr.org/papers/v27/25-2560.html).
+- **`Implicit`** &mdash; для скалярных непрерывных смесей с дифференцируемыми CDF компонент; [статья](https://arxiv.org/abs/1805.08498).
+- **`PostStratified`** &mdash; для скалярных непрерывных смесей с дифференцируемыми CDF и обратными CDF компонент; [статья](https://www.jmlr.org/papers/v27/25-2560.html).
+
+`Implicit` и `PostStratified` пока ограничены скалярными событиями.
+`Stratified` требует `rsample()` у каждой компоненты; `Implicit` требует
+дифференцируемую `cdf()`, а `PostStratified` &mdash; дифференцируемые
+`cdf()` и `icdf()`.
 
 
 

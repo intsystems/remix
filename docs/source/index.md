@@ -61,3 +61,10 @@ A runnable version is in `examples/benchmark.py`.
 | [`ELBOObjective`](api/objectives.md) | ELBO integrand `log p(z) - log q(z)`. |
 | [`ScoreFunction`](api/estimators.md) | REINFORCE gradient estimator with a constant baseline. |
 | [`Stratified`](api/estimators.md) | Pathwise gradient estimator with `n_samples` draws per reparameterizable component. |
+| [`Implicit`](api/estimators.md) | Implicit CDF-rank gradient estimator for scalar continuous mixtures. |
+| [`PostStratified`](api/estimators.md) | Single-sample continuous-transport estimator using component CDFs and inverse CDFs. |
+
+`Implicit` and `PostStratified` currently require scalar-event components.
+Their component distributions must implement differentiable `cdf()` methods;
+`PostStratified` also requires `icdf()`. `Stratified` supports event shapes
+handled by each component's `rsample()`.
