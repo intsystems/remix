@@ -1,74 +1,190 @@
+\clearpage
 \section{Comparing the Estimators}
 \label{sec:comparison}
-The running example shows how all four methods recover the same expected
-gradient while using different information from the mixture. Score-function
-estimation weights density derivatives by the observed objective. Stratification
-samples every component and differentiates their weighted objectives. Implicit
-reparameterization moves one sampled point while keeping its standardized value
-fixed. Post-stratification uses one point to average the sample derivatives of
-all components, retaining a score term for the weights. These differences
-determine both the randomness in an update and the work needed to compute it.
+Table~\ref{tab:estimators} compares the four estimators in
+Eqs.~\eqref{eq:score}--\eqref{eq:poststratified} at the level of a single
+update. The score-function estimator
+uses the objective value at one mixture draw $Z$. The implicit and
+post-stratified estimators also need the gradient with respect to that point.
+Stratification evaluates both at a separate draw $Z_k$ from each component
+and weights the resulting values by the mixture probabilities.
+The single-draw and stratified objective estimates are
+\begin{equation*}
+ f = f_\theta(Z)
+ \qquad\text{and}\qquad
+ \bar f = \sum_{k=1}^K \pi_k f_\theta(Z_k).
+\end{equation*}
+We write $h$ for the input gradient at $Z$. The subscript in $f_k$ and $h_k$
+places the value and gradient at the draw from component $k$.
 
-For score-function estimation, the objective value scales the entire density
-score, making the baseline an important part of the comparison. Stratification
-removes the categorical draw by assigning samples to every component; its
-remaining randomness comes from sampling within those components. This also
-ensures that a component with a small mixture weight receives samples in each
-update. Post-stratification instead averages the component derivatives
-conditional on one sampled value. Its Rao--Blackwell guarantee compares it with
-the corresponding estimator that uses only the selected component's pathwise
-and weight-score terms \citep{burroni2026mixture}. Comparing it with full
-stratification or implicit reparameterization requires examining the objective,
-the mixture, and the sample budget. In the running example, implicit and
-post-stratified estimates agree for the means but differ for the mixture weight,
-so even within one problem the comparison depends on which parameters are
-being optimized.
+To read a gradient column, choose the parameter $\lambda$ to update.
+A logit $\alpha_j$ controls how often component $j$ is selected. A coordinate
+$\eta$ of $\phi_k$, such as a Gaussian mean, controls where component $k$
+places its mass. Add the \emph{direct term} to the \emph{sampling term} for
+that parameter. The direct term differentiates the objective while holding
+the sampled points fixed. The sampling term accounts for the change in
+their distribution.
+For the quadratic objective in the Gaussian mean row, the mean enters only
+through sampling, so that row gives the entire update.
 
-The available operations also affect the choice.
-Table~\ref{tab:estimators} summarizes one update of each method. Score-function
-estimation needs sampling and mixture log-density derivatives, making it a
-useful baseline for a broad range of component families. Stratification adds
-component sampling derivatives and permits separate sample counts for each
-component. Post-stratification uses inverse component maps to obtain averaged
-sample derivatives with one objective evaluation. Implicit reparameterization
-also uses one objective evaluation and carries weight derivatives through the
-sample; its additional requirements are conditional CDFs, their derivatives,
-and a Jacobian solve.
-
-\begin{table}[htbp]
- \centering
- \caption{Requirements per update. Stratification uses one sample per component;
- the other methods use one mixture sample.}
+\begin{table}[!htb]
+ \caption{One unbiased update with trainable logits and components. Value
+ and slope counts give the number of points requiring $f_\theta$ and
+ $\nabla_z f_\theta$. Work counts mixture arithmetic for $K$ diagonal Gaussians
+ in $d$ dimensions. The implicit bound uses a dense rank Jacobian.
+ Equations~\eqref{eq:implicit-adjoint} and~\eqref{eq:label-gradient} define
+ the implicit vector $u$ and the reference gradient estimate $G$.}
  \label{tab:estimators}
- \small
- \begin{tabular}{@{}lcl@{}}
+ \centering
+ \ifdgruyterstyle\baretabulars\fi
+ \sffamily\small
+ \setlength{\tabcolsep}{3pt}
+ \renewcommand{\arraystretch}{1.12}
+ \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{.18\linewidth}*{4}{>{\raggedright\arraybackslash}X}@{}}
   \toprule
-  Estimator & Objective evaluations & Required operations \\
+  \textbf{Property} & \textbf{Score-function} & \textbf{Stratified}
+    & \textbf{Implicit} & \textbf{Post-stratified} \\
   \midrule
-  Score-function & $1$ & Mixture log-density derivatives \\
-  Stratified & $K$ & Component sampling derivatives \\
-  Implicit & $1$ & Conditional CDFs and a Jacobian solve \\
-  Post-stratified & $1$ & Inverse component maps and responsibilities \\
+  Sampled points
+    & $Z\sim q_\theta$ & $Z_k\sim q_k$, all $k$ & $Z\sim q_\theta$ & $Z\sim q_\theta$ \\
+  Objective estimate
+    & $f$ & $\bar f$ & $f$ & $f$ \\
+  Value / slope counts
+    & $1\,/\,0$ & $K\,/\,K$ & $1\,/\,1$ & $1\,/\,1$ \\
+  \midrule
+  Direct term for $\lambda$
+    & $\partial_\lambda f$ & $\sum_l\pi_l\,\partial_\lambda f_l$
+    & $\partial_\lambda f$ & $\partial_\lambda f$ \\
+  Logit sampling term $\alpha_j$
+    & $(f-b)(r_j-\pi_j)$ & $\pi_j(f_j-\bar f)$
+    & $-u^\top\partial_{\alpha_j}S$\newline
+      $\displaystyle -\frac{h\pi_j(F_j-F)}{q}$ {\scriptsize $(d=1)$}
+    & $f(r_j-\pi_j)$ \\
+  \addlinespace[2pt]
+  Component sampling term $\eta$
+    & $(f-b)r_k$ $\times\,\partial_\eta\log q_k(Z)$
+    & $\pi_k h_k^\top v_k(\varepsilon_k)$
+    & $-u^\top\partial_\eta S$\newline
+      $\displaystyle -\frac{h\pi_k\,\partial_\eta F_k}{q}$ {\scriptsize $(d=1)$}
+    & $r_k h^\top v_k(e_k)$ \\
+  \addlinespace[2pt]
+  Gaussian mean $\mu_k$, $f(z)=-z^2/2$
+    & $(f-b)r_k\,\dfrac{Z-\mu_k}{\sigma_k^2}$ & $-\pi_k Z_k$
+    & $-r_k Z$ & $-r_k Z$ \\
+  \midrule
+  Distribution operations
+    & Mixture score at $Z$ & Component sampler derivatives at $\varepsilon_k$
+    & Conditional CDF derivatives and triangular solve
+    & Responsibilities, inverse maps and sampler derivatives at $e_k$ \\
+  Mixture density work
+    & $O(Kd)$ & $O(K^2d)$ & $O(Kd)$ & $O(Kd)$ \\
+  Total mixture work for the ELBO gradient
+    & $O(Kd)$ & $O(K^2d)$ & $O(Kd^2)$ & $O(Kd)$ \\
+  \addlinespace
+  Variance of $\widehat g_\lambda$
+    & $\operatorname{Var}[\partial_\lambda f+(f-b)s_\lambda]$
+    & $\sum_l\pi_l^2\,\operatorname{Var}(G\mid C=l)$
+    & $\operatorname{Var}[\partial_\lambda f-u^\top\partial_\lambda S]$
+    & $\operatorname{Var}(\mathbb E[G\mid Z])$\newline $\leq\operatorname{Var}(G)$ \\
+  Change for a constant shift $c$ (fixed $b$)
+    & $c\,s_\lambda$ & $0$ & $0$
+    & $c(r_j-\pi_j)$ for $\alpha_j$\newline $0$ for $\eta$ \\
+  Exact posterior with STL
+    & $(L-b)s_\lambda$ & $0$ & $0$
+    & $L(r_j-\pi_j)$ for $\alpha_j$\newline $0$ for $\eta$ \\
+  ReMix class name
+    & \texttt{ScoreFunction} & \texttt{Stratified}
+    & \texttt{Implicit} & \texttt{PostStratified} \\
   \bottomrule
- \end{tabular}
+ \end{tabularx}
 \end{table}
 
-Objective counts are particularly informative when evaluating the model is
-expensive. In that setting, the single-sample methods can spend the saved model
-evaluations on additional updates or independent samples. Density computations
-also matter: evaluating the ELBO at one point requires the full mixture
-density. For diagonal Gaussians, this entails $O(Kd)$ component-density work,
-so evaluating the ELBO once in every component entails $O(K^2d)$ such work.
-Post-stratification evaluates all component densities and inverse maps at a
-single point, while implicit reparameterization adds the standardization
-derivatives and solve described above. Vectorization and the relative cost of
-the model determine how these operation counts translate into runtime.
+\paragraph*{Matched sampling budgets.}
+With $K$ objective evaluations, stratification samples every component once.
+With the same budget of independent mixture draws, the chance of selecting
+component $k$ at least once is $1-(1-\pi_k)^K$. All $K$ draws can miss a
+component with a small weight.
 
-Consequently, an empirical comparison should report both gradient variance at a
-fixed mixture and optimization progress under matched computational budgets.
-Equal objective-evaluation budgets and equal wall-clock budgets answer different
-practical questions, especially as the number of components and the event
-dimension grow. STL preserves the expected ELBO gradient and changes the
-sample-level estimator, so its effect should be evaluated separately for each
-method. ReMix will expose the sample budget and STL option through a shared
-interface, making these comparisons possible with the same model and optimizer.
+\paragraph*{Differentiating the component samplers.}
+Stratification differentiates each component sampler with the noise that
+generated its draw. Post-stratification starts from one observed point and
+asks how each component could have produced it. Write $v_k$ for the
+component's sample velocity at fixed noise and $e_k$ for the noise that
+would reproduce $Z$.
+\begin{equation*}
+ v_k(e) = \partial_\lambda T_k(e;\phi_k),
+ \qquad
+ e_k = T_k^{-1}(Z;\phi_k).
+\end{equation*}
+Stratification uses $v_k$ at the original noise $\varepsilon_k$.
+Post-stratification uses it at $e_k$ and weights the contribution by $r_k$,
+the probability that component $k$ generated the observed point.
+
+\paragraph*{Holding percentiles fixed.}
+The implicit estimator follows the point whose percentile stays fixed as
+the mixture changes. For a scalar draw, this percentile is the mixture CDF
+$F$ at $Z$. The scalar entries also use the component CDF $F_k$ and the
+mixture density $q$ at the same point. For a vector draw, $S=S_\theta(Z)$
+collects the percentiles of successive coordinates, each conditional on the
+preceding ones. A single triangular solve gives the vector $u$ used in every
+parameter's sampling term.
+\begin{equation}
+ (D_z S_\theta(Z))^\top u = h,
+ \qquad
+ \text{sampling term for }\lambda = -u^\top\partial_\lambda S_\theta(Z).
+ \label{eq:implicit-adjoint}
+\end{equation}
+The partial derivative on the right holds $Z$ fixed. The extra work in the
+implicit column comes from computing the rank derivatives. For diagonal
+Gaussians, evaluating either the mixture density or the rank map costs
+$O(Kd)$. Forming the dense Jacobian takes $d$ reverse passes through that
+map, followed by an $O(d^2)$ solve~\citep{burroni2026mixture}.
+
+\paragraph*{Which updates coincide?}
+In the two-Gaussian example, shifting a component mean shifts each of its
+draws by the same amount. At a fixed point, the derivative of that
+component's CDF with respect to the mean is the negative of its density.
+Substitution into the scalar implicit formula gives the mixture draw a
+velocity of $r_k(Z)$. Post-stratification gives the same velocity by
+weighting the component's unit shift by its responsibility. Multiplying
+this shared velocity by the slope $-Z$ of the quadratic objective gives
+\begin{equation*}
+ \widehat g_{\mu_k} = -r_k(Z)\,Z,
+ \qquad
+ \mathbb E[\widehat g_{\mu_k}] = -\pi_k\mu_k .
+\end{equation*}
+For a logit, post-stratification and the zero-baseline score-function
+estimator agree on the same draw for any objective.
+
+\paragraph*{Variance.}
+The variance comparison starts with a gradient estimate that keeps the
+sampled label $C$ and the noise $\varepsilon_C$ that generated its point.
+With that information the estimate is
+\begin{equation}
+ G = \partial_\lambda f + h^\top v_C(\varepsilon_C)
+     + f\,\partial_\lambda\log\pi_C .
+ \label{eq:label-gradient}
+\end{equation}
+The three terms account for the direct derivative, the motion of the draw
+within its component, and the change in its label probability.
+Stratification fixes the component counts, leaving only variation among
+draws within each component. Post-stratification averages $G$ over the
+possible labels of the observed point. With finite second moments, the
+variance of that conditional average is at most the variance of $G$
+\citep{burroni2026mixture}.
+
+\paragraph*{At the exact posterior.}
+For observed data $x$ and a fixed model $p$, the evidence lower bound
+(ELBO) averages a log density ratio over mixture draws. Holding the sampled
+point fixed gives the negative of the mixture score as its direct derivative.
+\begin{align*}
+ f_\theta(z) &= \log p(x,z)-\log q_\theta(z),\\
+ \partial_\lambda f_\theta(Z) &= -\partial_\lambda\log q_\theta(Z) = -s_\lambda .
+\end{align*}
+This direct derivative has mean zero. Sticking the Landing (STL) omits it
+and keeps the derivatives due to sampling~\citep{roeder2017stl}. When the
+mixture equals the posterior, the density ratio equals the evidence $p(x)$
+at every point. The objective is then the constant $L=\log p(x)$ and its
+sample slope is zero. The stratified and implicit estimates vanish on every
+draw. The score-function estimate and the post-stratified logit estimate can
+still vary with the draw.

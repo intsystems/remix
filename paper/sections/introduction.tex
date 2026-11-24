@@ -1,39 +1,23 @@
 \section{Introduction}
-Variational inference approximates a posterior by optimizing a tractable density.
-Finite mixtures make the approximation more expressive by representing several
-modes with separate components. Variational boosting adds these components
-incrementally \citep{miller2017boosting}, while automatic differentiation
-variational inference with mixtures jointly optimizes their parameters and weights
-\citep{morningstar2021mixtures}.
+Fitting a finite mixture requires learning where its components place mass
+and how often each is sampled. Differentiating a Gaussian draw with respect
+to its mean accounts for the first effect. Learning its weight also requires
+accounting for the categorical choice that produced the draw. ReMix lets a
+PyTorch user change how both derivatives are estimated within one training loop.
 
-Sampling a mixture involves drawing a categorical index and then a continuous
-value from the chosen component. Differentiating the component sample captures
-how that value changes with the component parameters. Learning mixture weights
-also requires accounting for changes in the probability of choosing each
-component. Score-function estimators use
-derivatives of the log density \citep{ranganath2014bbvi}, while pathwise estimators
-differentiate the sampled value, as in variational autoencoders
-\citep{kingma2014vae,rezende2014backprop}. Each approach has its own variance
-and computational requirements \citep{mohamed2020gradients}.
+Stratification handles the categorical choice by evaluating every component
+\citep{morningstar2021mixtures}. Implicit reparameterization obtains a
+derivative of a single mixture draw from its distribution function
+\citep{figurnov2018implicit}. \citet{burroni2026mixture} relate these methods
+to post-stratification, which averages component derivatives at one sampled
+point.
 
-Several methods adapt these ideas to mixtures. Stratification samples every
-component and combines the resulting gradients using the mixture weights
-\citep{roeder2017stl,morningstar2021mixtures}. Implicit reparameterization obtains
-sample derivatives from distribution functions
-\citep{graves2016mixture,figurnov2018implicit}. Transport-based methods describe
-how probability mass moves as parameters change
-\citep{jankowiak2018transport,jankowiak2019multivariate}. This perspective also
-leads to a post-stratified estimator, which averages component derivatives at a
-single mixture sample. \citet{burroni2026mixture} bring these approaches into a
-common formulation and analyze their computational and variance properties.
-
-Our goal is to collect these four algorithms in ReMix, a convenient PyTorch
-library for optimizing mixture distributions and comparing gradient estimators.
-Its shared interface separates the mixture, the objective, and the estimator,
-allowing the same model and training loop to be reused across methods. A
-proof-of-concept implementation already provides this structure and a
-score-function baseline. The next steps are to add the remaining estimators for
-mixtures of diagonal Gaussian components and the Sticking the Landing (STL)
-modification for evidence lower bound gradients \citep{roeder2017stl}.
-This report develops the estimators through a common example and explains the
-tradeoffs that the library will make accessible through this interface.
+\paragraph*{Contributions.}\leavevmode
+\begin{itemize}
+  \renewcommand{\labelitemi}{\textbullet}
+  \item We compare four estimators in Table~\ref{tab:estimators} by sampling budget,
+    weight and component gradients, variance, and required distribution operations.
+  \item A two-Gaussian example identifies which updates coincide on the same draw.
+  \item We provide a common PyTorch interface and show how to exchange its
+    score-function and stratified estimators at a fixed number of objective evaluations.
+\end{itemize}
