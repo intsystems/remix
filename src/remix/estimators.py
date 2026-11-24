@@ -142,3 +142,136 @@ class Stratified(GradientEstimator):
         values = objective.evaluate(q, z).reshape(len(q.components), self.n_samples)
         estimate = (q.mixing.probs * values.mean(dim=1)).sum()
         return EstimateResult(estimate.detach(), -estimate)
+
+
+def _validate_scalar_continuous_mixture(q: Mixture, estimator: str) -> None:
+    if q.event_shape:
+        raise TypeError(f"{estimator} currently requires scalar-event components.")
+    if any(not component.has_rsample for component in q.components):
+        raise TypeError(f"{estimator} requires continuous components with rsample().")
+
+
+def _sample_with_input_gradient(
+    q: Mixture, objective: ELBOObjective, n_samples: int
+) -> tuple[Tensor, Tensor, Tensor]:
+    z = q.sample(torch.Size([n_samples])).detach().requires_grad_()
+    values = objective.evaluate(q, z)
+    if values.requires_grad:
+        (input_gradient,) = torch.autograd.grad(
+            values.sum(), z, retain_graph=True, allow_unused=True
+        )
+    else:
+        input_gradient = None
+    if input_gradient is None:
+        input_gradient = torch.zeros_like(z)
+    return z, values, input_gradient.detach()
+
+
+class Implicit(GradientEstimator):
+    """Implicit reparameterization estimator for scalar continuous mixtures.
+
+    The mixture CDF defines a scalar rank map. Its parameter derivative gives
+    the pathwise sampling term without differentiating through the sampled
+    component label. Each component must provide a differentiable ``cdf``.
+
+    Args:
+        n_samples: Number of mixture samples per `estimate` call.
+    """
+
+    def estimate(self, q: Mixture, objective: ELBOObjective) -> EstimateResult:
+        """Estimate the objective using the mixture CDF rank map.
+
+        Raises:
+            TypeError: If the mixture is not scalar/continuous or its
+                components do not implement ``cdf``.
+            FloatingPointError: If inverse-density scaling is not finite.
+        """
+        if not isinstance(q, Mixture):
+            raise TypeError("q must be a Mixture.")
+        _validate_scalar_continuous_mixture(q, type(self).__name__)
+
+        z, values, input_gradient = _sample_with_input_gradient(
+            q, objective, self.n_samples
+        )
+        try:
+            component_cdfs = torch.stack(
+                [component.cdf(z.detach()) for component in q.components],
+                dim=-1,
+            )
+        except NotImplementedError as exc:
+            raise TypeError(
+                "Implicit requires every component to implement cdf()."
+            ) from exc
+
+        mixture_cdf = (q.mixing.probs * component_cdfs).sum(dim=-1)
+        inverse_density = torch.exp(-q.log_prob(z.detach()).detach())
+        if not torch.isfinite(inverse_density).all():
+            raise FloatingPointError(
+                "Implicit encountered a non-finite inverse mixture density."
+            )
+
+        correction = -(
+            input_gradient * inverse_density * mixture_cdf
+        ).mean()
+        surrogate = values.mean() + correction - correction.detach()
+        return EstimateResult(values.detach().mean(), -surrogate)
+
+
+class PostStratified(GradientEstimator):
+    """Single-sample continuous-transport estimator for scalar mixtures.
+
+    The estimator averages the component-label gradient conditional on each
+    sampled point, using component responsibilities and inverse CDF maps.
+    Components must provide differentiable ``cdf`` and ``icdf`` methods.
+
+    Args:
+        n_samples: Number of mixture samples per `estimate` call. The default
+            of one is the single-sample estimator.
+    """
+
+    def estimate(self, q: Mixture, objective: ELBOObjective) -> EstimateResult:
+        """Estimate the objective using post-stratified component transports.
+
+        Raises:
+            TypeError: If the mixture is not scalar/continuous or its
+                components do not implement ``cdf`` and ``icdf``.
+            FloatingPointError: If a component inverse CDF returns a
+                non-finite transport point.
+        """
+        if not isinstance(q, Mixture):
+            raise TypeError("q must be a Mixture.")
+        _validate_scalar_continuous_mixture(q, type(self).__name__)
+
+        z, values, input_gradient = _sample_with_input_gradient(
+            q, objective, self.n_samples
+        )
+        transported_points = []
+        try:
+            for component in q.components:
+                cdf = component.cdf(z.detach())
+                transported_points.append(component.icdf(cdf.detach()))
+        except NotImplementedError as exc:
+            raise TypeError(
+                "PostStratified requires every component to implement "
+                "cdf() and icdf()."
+            ) from exc
+
+        transported = torch.stack(transported_points, dim=-1)
+        if not torch.isfinite(transported).all():
+            raise FloatingPointError(
+                "PostStratified encountered a non-finite inverse-CDF point."
+            )
+
+        responsibilities = q.responsibilities(z.detach()).detach()
+        component_samples = (
+            input_gradient.unsqueeze(-1) * responsibilities * transported
+        ).sum(dim=-1).mean()
+        logits_gradient = (
+            values.detach().unsqueeze(-1)
+            * (responsibilities - q.mixing.probs.detach())
+        ).mean(dim=0)
+        logits_score = (q.logits * logits_gradient).sum()
+
+        correction = component_samples + logits_score
+        surrogate = values.mean() + correction - correction.detach()
+        return EstimateResult(values.detach().mean(), -surrogate)
