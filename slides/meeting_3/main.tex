@@ -1,0 +1,106 @@
+\documentclass[aspectratio=169]{beamer}
+\usepackage[T1,T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[main=russian,english]{babel}
+\usepackage{cmap,booktabs,amsmath,amssymb}
+\usecolortheme{beaver}
+\usefonttheme[onlymath]{serif}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[page number]
+\setbeamertemplate{blocks}[rounded=true,shadow=true]
+\setbeamersize{text margin left=0.5cm,text margin right=0.5cm}
+\setbeamerfont{author}{size=\normalsize}
+\setbeamerfont{institute}{size=\normalsize}
+\title{ReMix: градиенты для конечных смесей}
+\subtitle{Отчёт по проекту}
+\author{Александр Уденеев, Алексей Пономарев,\\ Лина Горбунова, Максим Иванов}
+\institute{ИАД, МФТИ}
+\date{}
+\begin{document}
+\begin{frame}
+\thispagestyle{empty}
+\maketitle
+\end{frame}
+
+\begin{frame}{Как обучать веса смеси?}
+\[
+ q_\theta(z)=\sum_{k=1}^K \pi_k q_{\phi_k}(z),
+ \qquad \pi=\operatorname{softmax}(a).
+\]
+\begin{block}{Задача}
+Подобрать веса $\pi_k$ и параметры компонент $\phi_k$, максимизируя
+$\mathbb E_{q_\theta}[\log p(x,z)-\log q_\theta(z)]$.
+\end{block}
+Выбор номера компоненты дискретен. Обычный обратный проход через этот выбор не даёт градиента по весам.
+\medskip
+
+\textbf{ReMix} строит стохастическую оценку градиента и передаёт её оптимизатору PyTorch.
+\end{frame}
+
+\begin{frame}{Четыре способа оценить один градиент}
+\small
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{@{}p{.21\linewidth}p{.41\linewidth}p{.31\linewidth}@{}}
+\toprule
+Оценщик & Откуда берётся градиент & Что требуется \\
+\midrule
+\texttt{ScoreFunction} & Взвешивает $\nabla_\theta\log q_\theta(z)$ выигрышем точки & Выборка и дифференцируемая по параметрам лог-плотность \\
+\texttt{Stratified} & Усредняет внутри каждой компоненты, затем по весам смеси & \texttt{rsample()} у компонент \\
+\texttt{Implicit} & Сохраняет квантиль при изменении параметров смеси & Скалярные непрерывные компоненты с \texttt{rsample}, \texttt{cdf} \\
+\texttt{PostStratified} & Усредняет вклады возможных меток при известной точке & Как у \texttt{Implicit}, плюс \texttt{icdf} \\
+\bottomrule
+\end{tabular}
+\end{frame}
+
+\begin{frame}{Из чего состоит один шаг обучения}
+\begin{enumerate}
+\item \texttt{Mixture(logits, components)} задаёт смесь распределений PyTorch и вычисляет $\log q_\theta(z)$.
+\item \texttt{ELBOObjective(log\_joint)} задаёт вклад одной точки в цель.
+\item \texttt{estimator.estimate(q, objective)} берёт выборку и возвращает \texttt{EstimateResult}.
+\end{enumerate}
+\begin{columns}[T,onlytextwidth]
+\column{.46\textwidth}
+\begin{block}{\texttt{result.value}}
+Оценка цели для журнала обучения. Тензор отделён от графа.
+\end{block}
+\column{.51\textwidth}
+\begin{block}{\texttt{result.surrogate\_loss}}
+\texttt{backward()} вычисляет градиент для шага минимизации в PyTorch.
+\end{block}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Зачем выделять Objective в отдельный класс?}
+\texttt{ELBOObjective.evaluate(q, z)} возвращает по одному значению
+$\log p(x,z)-\log q_\theta(z)$ на точку и проверяет совпадение форм.
+При \texttt{stl=True} параметры $q$ внутри $\log q$ отсоединяются от графа, путь через $z$ сохраняется.
+\begin{block}{Можно ли заменить ELBO?}
+Для цели $\mathbb E_q[f(q,z)]$ можно передать свой объект с методом \texttt{evaluate(q, z)}. Например, для $\beta$-VAE при фиксированном $x$:
+\[
+ f=\log p(x\mid z)+\beta\,[\log p(z)-\log q(z\mid x)].
+\]
+\end{block}
+Формулу и правила дифференцирования можно менять в одном месте для всех четырёх оценщиков. Для другой дивергенции нужно проверить вид матожидания и условия выбранного метода.
+\end{frame}
+
+\begin{frame}{Нужен ли смеси свой \texttt{rsample()}?}
+\begin{block}{Что есть в версии 1.0.0}
+\texttt{Mixture.sample()} выбирает компоненту и возвращает точку без графа. У самой смеси метода \texttt{rsample()} нет.
+\end{block}
+\begin{itemize}
+\item В \texttt{Stratified} градиент проходит через \texttt{rsample()} каждой компоненты и через веса их средних.
+\item В \texttt{Implicit} производная функции распределения смеси входит прямо в оценку градиента цели.
+\end{itemize}
+Общий \texttt{Mixture.rsample()} потребовал бы указать, для каких смесей определён такой градиент.
+\end{frame}
+
+\begin{frame}{Результат проекта}
+\begin{block}{\texttt{remix-vi 1.0.0}}
+Опубликован пакет для PyTorch. В одном цикле обучения можно заменить оценщик, сохранив смесь, целевую функцию и оптимизатор.
+\end{block}
+Выбор метода зависит от доступных операций над компонентами и размерности события.
+\medskip
+
+\href{https://pypi.org/project/remix-vi/1.0.0/}{\beamergotobutton{Страница релиза на PyPI}}
+\end{frame}
+\end{document}
